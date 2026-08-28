@@ -1,0 +1,43 @@
+# --- agent-internal working context: NEVER commit ---
+CLAUDE.md
+.claude/
+scratch/
+notes/
+
+# --- data (downloaded separately from Zenodo, 184MB+) ---
+*.csv
+*.tar.gz
+*.zip
+KuaiRand-Pure/
+data/
+kuairand-starter-kit/KuaiRand-Pure/
+
+# --- model artifacts / caches ---
+*.pkl
+*.joblib
+*.npy
+*.npz
+*.lgb
+*.txt.model
+checkpoints/
+cache/
+feature_cache/
+runs/
+artifacts/
+
+# --- python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.ipynb_checkpoints/
+
+# --- env / os ---
+.env
+.env.*
+.DS_Store
+
+# internal planning brief — decide before making repo public
+techjam-handoff.md
