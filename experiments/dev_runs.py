@@ -33,7 +33,13 @@ for n in (1, 2, 3):
     chunk_it = first(lambda s: s.get('group_chunk') is not None)
     listwise_it = first(lambda s: s.get('objective') == 'rank_xendcg')
     best = summary['final_metrics']['valid_primary']
+    stds = [r['primary_std'] for r in its if r.get('primary_std') is not None]
     rows.append({
+        'conv_window': summary.get('converged_at_window'),
+        'conv_per_iter': summary.get('converged_at_per_iteration'),
+        'std_mean': round(sum(stds)/len(stds), 5) if stds else None,
+        'std_max': round(max(stds), 5) if stds else None,
+        'best_curve': summary.get('best_curve'),
         'run': n,
         'chunking_found': chunk_it is not None, 'chunking_iter': chunk_it,
         'listwise_found': listwise_it is not None, 'listwise_iter': listwise_it,
@@ -53,16 +59,21 @@ with open(os.path.join(ROOT, 'reports', 'dev_runs_summary.json'), 'w') as fh:
 
 print(f"\n\n{'='*118}\nDEV RUN SUMMARY\n{'='*118}")
 h = (f"{'run':>4} {'chunking':>9} {'@it':>4} {'listwise':>9} {'@it':>4} "
-     f"{'final':>8} {'delta':>8} {'conv@':>6} {'used':>5} {'interv':>7} {'tokens':>8} {'wall':>6}")
+     f"{'final':>8} {'delta':>9} {'conv_win':>9} {'conv_iter':>10} {'seedstd':>8} "
+     f"{'used':>5} {'interv':>7} {'tokens':>8} {'wall':>6}")
 print(h); print('-' * len(h))
 for r in rows:
     if r.get('died'):
         print(f"{r['run']:>4}  DIED: {r['died'][:90]}"); continue
     print(f"{r['run']:>4} {str(r['chunking_found']):>9} {str(r['chunking_iter']):>4} "
           f"{str(r['listwise_found']):>9} {str(r['listwise_iter']):>4} "
-          f"{r['final_primary']:>8.5f} {r['delta']:>+8.5f} {r['iters_at_convergence']:>6} "
+          f"{r['final_primary']:>8.5f} {r['delta']:>+9.5f} {str(r['conv_window']):>9} "
+          f"{str(r['conv_per_iter']):>10} {str(r['std_mean']):>8} "
           f"{r['iters_used']:>5} {r['interventions']:>7} {r['tokens']:>8,d} {r['wall_s']:>5}s")
 ok = [r for r in rows if not r.get('died')]
 print(f"\nchunking found in {sum(r['chunking_found'] for r in ok)}/3   "
       f"listwise found in {sum(r['listwise_found'] for r in ok)}/3   "
       f"total interventions {sum(r['interventions'] for r in ok)}")
+print(f"runs reaching iteration 5+: {sum(1 for r in ok if r['iters_used'] > 5)}/3")
+for r in ok:
+    print(f"  run {r['run']} best-so-far curve: {r['best_curve']}")

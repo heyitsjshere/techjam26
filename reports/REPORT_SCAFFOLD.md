@@ -88,3 +88,79 @@ failure behaviour under an unexpected obstacle: **escalate rather than work
 around.** It is also the reason the final key-handling design reads credentials
 from `os.environ` only and never reads back, logs, or persists the value —
 the agent never needs to observe the key to use it.
+
+## F4 — The convergence rule is mis-scaled against this benchmark's headroom.
+
+Under the strict per-iteration reading, an iteration must improve best-so-far by
+more than **eps = 0.002** to reset the stall counter. Phase 1 measured the total
+attainable headroom above the FM baseline at approximately **+0.0025**, across
+79 experiments covering objective, grouping, six feature families, three
+encoding schemes, field ablations, distribution-shift handling, a 19-config
+hyperparameter sweep and five ensembles.
+
+**eps is therefore roughly 80% of the entire prize.** Under that reading no
+sequence of genuine incremental gains can keep a run alive — three real
+improvements of +0.0008 each are worth +0.0024 in total and every one of them
+individually fails the test. Only a single large jump can prevent convergence,
+which means the rule rewards guessing the full winning configuration in one shot
+over systematically isolating its parts.
+
+This is a property of the benchmark, not of any particular agent, and it is
+reported on its own merits whichever reading the organizers intended. It is
+**not** our argument for adopting the window reading — that argument rests on
+the grammar and on the observation that the per-iteration reading makes N nearly
+inoperative (POLICY.md §9). We report the converged iteration under both
+readings for every run.
+
+Empirically, across six dev runs, the window reading extended exactly zero runs:
+in every case the agent made one improvement and then plateaued, so there was
+nothing for the window to accumulate.
+
+## F5 — The `group_sizes` duplication bug, and why only a real dev run caught it.
+
+`agent/executor.py` carried its own copy of `group_sizes`, which evaluated
+`blocks[-1]` before checking whether `blocks` was empty. Any train user with
+fewer rows than the chunk size raised `IndexError`, so **every spec with
+`group_chunk` set failed** — precisely the structural move the agent most needs.
+Duplication was the defect; the index error was only its symptom. Fixed by
+consolidating into `src/grouping.py`, imported by both callers, with
+`tests/test_grouping.py` covering the breaking case plus partition invariants,
+remainder folding, and order stability.
+
+**The unit tests could not have caught this, and neither could the stub.** The
+stub proposer cycles a fixed pool and ranks a non-chunked candidate first, so a
+full stub loop ran green while the bug was live — we saw a clean summary line
+and a converged run. Only a real proposer, reasoning from the briefing against
+real specs, ranked a chunked candidate first and hit the failure on iteration 1.
+
+This is the argument for the dev-run protocol as a distinct verification stage.
+A harness can pass every unit test, pass an end-to-end smoke run, and still be
+broken on exactly the path that matters, because the smoke run does not generate
+the inputs the real system generates. It is also Robustness evidence in its own
+right: the failure was contained (retry, then mark dead and route around), the
+run completed rather than crashing, and the error text was preserved in the run
+log, which is how it was diagnosed.
+
+## F6 — The proposer's expected-gain calibration is poor. Reported as a limitation.
+
+The agent predicts gains of **0.045 to 0.062**; realised gains are **0.0003 to
+0.0014**. It is systematically optimistic by roughly two orders of magnitude.
+
+Ordering is what the controller consumes, and the ordering is largely sound —
+the agent reaches train-group chunking at iteration 1 or 2 in every run, derived
+from the stated group-shape mismatch. But the magnitudes are not usable as
+absolute predictions, and the agent has no way to learn better within a run,
+because a run ends after three or four experiments.
+
+**We are not correcting this, and the reason is a constraint we chose to keep.**
+Calibrating it would mean telling the agent the realistic scale of achievable
+gains — which is the Phase 1 result, i.e. the answer. The seeding boundary
+(`tests/test_seeding_boundary.py`, 72 assertions) exists specifically to keep
+measured outcomes out of everything the proposer reads, because the Innovation
+axis scores the agent's own reasoning and a run log that opens with an inherited
+answer demonstrates nothing.
+
+So this is a real limitation that we are accepting deliberately rather than
+engineering away, and we would rather report a poorly calibrated agent that
+derived its own structural hypotheses than a well calibrated one that was told
+where to look.
