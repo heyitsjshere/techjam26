@@ -123,15 +123,25 @@ METHOD = """
 HOW THE HARNESS MEASURES YOU. These are properties of the measurement apparatus,
 not advice about what will work.
 
-A SPEC IS MEASURED AS A WHOLE. The harness runs the configuration you submit and
-reports one score for it. It does not decompose that score across the choices
-inside the spec. So if a spec changes the objective, the grouping and three
-feature blocks at once, a better or worse number tells you that the bundle moved
-the metric -- it does not tell you which part did, or whether one part helped
-while another hurt and the two partly cancelled. Bundling changes destroys
-attribution, and attribution is what lets your next proposal be better than a
-guess. Every block and every parameter you include is a claim you are making;
-the score you get back cannot separate those claims for you.
+A SPEC IS MEASURED AS A WHOLE, AND ATTRIBUTION DISCIPLINE APPLIES TO FEATURE
+BLOCKS. The harness runs the configuration you submit and reports one score for
+it. It does not decompose that score across the choices inside the spec. So if a
+spec adds three feature blocks at once, a better or worse number tells you the
+bundle moved the metric -- not which block did, nor whether one helped while
+another hurt and the two partly cancelled.
+
+That discipline matters most IN THE FEATURE SPACE, where individual effects are
+small and mutually confounded and a bundled result is genuinely uninterpretable.
+
+THE OBJECTIVE AND THE GROUPING ARE EXPLICITLY EXEMPT. Do not hold a structural
+choice fixed in order to preserve feature-block attribution -- that is a
+category error. Attribution discipline exists because small confounded effects
+need isolating; a structural choice is neither small nor confounded with the
+feature set, and freezing one to keep a clean feature comparison spends your
+budget measuring the wrong axis. You may change the objective or the grouping at
+any iteration, including while feature blocks also change, and you should not
+treat an earlier spec as a reference configuration you are obliged to stay
+near.
 
 EVERY SPEC IS EVALUATED AT 3 SEEDS. You receive the mean and the standard
 deviation. The baseline model's seed standard deviation is 0.0008, so a

@@ -25,6 +25,8 @@ address it, none of which hardcodes an ordering:
   3. Improvement is measured against best-so-far over a 3-seed mean, so seed
      noise (std ~0.0008) cannot masquerade as progress or as saturation.
 """
+import hashlib
+import json
 import os
 import sys
 import time
@@ -44,6 +46,7 @@ N_STALL = 3
 MAX_ITERS = 50
 WALL_CLOCK_LIMIT_S = 6 * 3600
 UNCITED_DISCOUNT = 0.5
+MAX_RESLATES = 2          # bounded, so a stubborn proposer cannot spin forever
 
 # POLICY.md section 6: nothing single-seed is ever designated. Selection,
 # convergence and designation all run on the 3-seed mean. Seed std is 0.0008 and
@@ -70,6 +73,8 @@ class Controller:
         self.max_iters = max_iters
         self.history = []
         self.dead_actions = set()
+        self.evaluated = {}       # spec key -> prior result summary
+        self.repeat_rejections = 0
         self.best = None            # (primary_mean, spec, iteration)
         self.best_curve = []        # best-so-far after each COUNTING iteration
         self.stall = 0              # per-iteration reading
@@ -132,6 +137,7 @@ class Controller:
         if not self.iteration_zero():
             return self._finish('baseline reproduction failed', None)
         i = 1
+        reslates = 0
         while i < self.max_iters:
             if time.time() - self.t0 > WALL_CLOCK_LIMIT_S:
                 return self._finish('wall-clock backstop reached', i)
@@ -156,7 +162,17 @@ class Controller:
                 i += 1
                 continue
 
-            self._execute_first_viable(self._rank(cands), i, usage, api_recovery, forced)
+            outcome = self._execute_first_viable(
+                self._rank(cands), i, usage, api_recovery, forced)
+            if outcome == 'all_repeats' and reslates < MAX_RESLATES:
+                # Every candidate was already evaluated. Re-running one is
+                # deterministic given fixed seeds, so it cannot produce new
+                # information. Ask for a fresh slate WITHOUT spending the
+                # iteration -- run 1 of the previous round burned its forced
+                # high-variance iteration on a byte-identical repeat.
+                reslates += 1
+                continue
+            reslates = 0
             if self._converged_window():
                 return self._finish(
                     f'window reading: best-so-far improved by no more than {EPS} '
@@ -172,9 +188,15 @@ class Controller:
         return sorted(cands, key=lambda c: -c['_effective_gain'])
 
     def _execute_first_viable(self, ranked, i, usage, api_recovery, forced):
+        repeats = []
         for c in ranked:
             key = self._key(c.get('spec'))
             if key in self.dead_actions:
+                continue
+            if key in self.evaluated:
+                repeats.append({'hypothesis': c.get('hypothesis'),
+                                'spec': c.get('spec'),
+                                'already_evaluated': self.evaluated[key]})
                 continue
             errs = actionspace.validate(c.get('spec') or {})
             attempts, err, rec, res = 0, None, None, None
@@ -197,8 +219,46 @@ class Controller:
                 self.dead_actions.add(key)
                 self._log_iter(i, c, None, err, rec, usage, api_recovery, forced)
                 return None
+            if res is not None and (res.get('metrics') or res.get('rejected_by')):
+                self.evaluated[key] = {
+                    'iteration': i,
+                    'primary': (res.get('metrics') or {}).get('primary'),
+                    'primary_std': (res.get('metrics') or {}).get('primary_std'),
+                    'rejected_by': res.get('rejected_by')}
             self._log_iter(i, c, res, None, None, usage, api_recovery, forced)
-            return True
+            return 'ran'
+        if repeats:
+            # Feed the prior results back so the next slate is informed, and log
+            # the rejection so the cache firing is visible in the run record.
+            self.repeat_rejections += len(repeats)
+            for rp in repeats:
+                self.history.append({
+                    'iteration': i, 'hypothesis': rp['hypothesis'],
+                    'spec': rp['spec'], 'rejected_by': 'already_evaluated',
+                    'primary': rp['already_evaluated']['primary'],
+                    'note': ('This exact spec was already evaluated at iteration '
+                             f"{rp['already_evaluated']['iteration']} scoring "
+                             f"{rp['already_evaluated']['primary']}. Re-running it is "
+                             'deterministic and cannot produce new information. '
+                             'Propose something different.')})
+            self.log.iteration(
+                i=i, tier='A',
+                hypothesis='(slate contained only already-evaluated specs)',
+                rationale='', expected_gain=0.0, expected_gain_derivation='',
+                spec=None, drift=None, metrics=None, diagnostic=None,
+                accepted=False, best_so_far=self.best[0] if self.best else None,
+                stall_count=self.stall,
+                error=None,
+                recovery=f'{len(repeats)} repeat spec(s) rejected from the cache; '
+                         'prior results fed back and a fresh slate requested '
+                         'WITHOUT consuming the iteration',
+                usage=usage, api_recovery=api_recovery, seconds=0,
+                extra={'rejected_by': 'already_evaluated',
+                       'repeats': repeats,
+                       'repeat_rejections_total': self.repeat_rejections,
+                       'ran_experiment': False,
+                       'counted_toward_convergence': False})
+            return 'all_repeats'
         self._log_iter(i, {'hypothesis': '(all candidates dead or invalid)',
                            'rationale': '', 'expected_gain': 0.0,
                            'expected_gain_derivation': '', 'tier': 'A', 'spec': None},
@@ -277,7 +337,9 @@ class Controller:
                    'converged_at_window': i,
                    'converged_at_per_iteration': self.per_iter_converged_at,
                    'best_curve': [round(x, 5) for x in self.best_curve],
-                   'eval_seeds': EVAL_SEEDS})
+                   'eval_seeds': EVAL_SEEDS,
+                   'repeat_specs_rejected': self.repeat_rejections,
+                   'distinct_specs_evaluated': len(self.evaluated)})
 
     def _designate(self):
         if not self.best:
@@ -293,10 +355,26 @@ class Controller:
 
     @staticmethod
     def _key(spec):
+        """Canonical hash of everything that determines the result.
+
+        Seeds are excluded because the controller forces EVAL_SEEDS, and
+        block_justifications are excluded because they are prose about the spec,
+        not part of it. Params ARE included: two specs differing only in a
+        hyperparameter are different experiments, even if we expect the axis to
+        be flat -- the cache must not silently swallow a real question.
+        """
         if not spec:
             return 'none'
-        return (f"{spec.get('model')}|{spec.get('objective')}|"
-                f"{spec.get('group_chunk')}|{sorted(spec.get('feature_blocks') or [])}")
+        payload = {
+            'model': spec.get('model'), 'objective': spec.get('objective'),
+            'group_chunk': spec.get('group_chunk'),
+            'feature_blocks': sorted(spec.get('feature_blocks') or []),
+            'params': dict(sorted((spec.get('params') or {}).items())),
+            'recency_decay': spec.get('recency_decay'),
+            'min_date': spec.get('min_date'),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:24]
 
     @staticmethod
     def _action_doc():

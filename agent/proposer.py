@@ -41,7 +41,7 @@ FACT_KEYS = {
     'HIGH_COVERAGE': '99.9% of valid videos appear in train.',
     'CEILING': 'Perfect ranking scores 0.8484 on valid; only 57.8% of users are influenceable.',
     'POSITIVE_RATE': 'Positive rate ~0.31 on train and valid.',
-    'ONE_CHANGE_PER_SPEC': 'A spec is scored as a whole; bundling changes destroys attribution.',
+    'ONE_CHANGE_PER_SPEC': 'A spec is scored as a whole; bundling FEATURE BLOCK changes destroys attribution. Objective and grouping are exempt.',
     'CONVERGENCE_MECHANICS': 'Window reading: best(t) - best(t-3) <= 0.002 stops the run; gains accumulate inside the window.',
     'SEED_NOISE': 'Every spec is run at 3 seeds; differences below ~0.0008 are seed noise.',
 }

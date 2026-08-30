@@ -164,3 +164,66 @@ So this is a real limitation that we are accepting deliberately rather than
 engineering away, and we would rather report a poorly calibrated agent that
 derived its own structural hypotheses than a well calibrated one that was told
 where to look.
+
+## F7 — The convergence rule permits about one meaningful experiment on this benchmark. *(primary finding)*
+
+**Evidence: six dev runs, zero interventions, two harness configurations.**
+
+Across all six runs:
+
+- **No run has ever reached iteration 5.** Every run terminated at 4 iterations
+  used, converging at iteration 3.
+- **Every run makes exactly one improvement, then plateaus.** The best-so-far
+  curves are flat after a single step:
+
+  ```
+  round 2, run 1: [0.60141, 0.60209, 0.60209, 0.60209]
+  round 2, run 2: [0.60141, 0.60209, 0.60209, 0.60209]
+  round 2, run 3: [0.60141, 0.60141, 0.60297, 0.60297]
+  ```
+
+- **The window and per-iteration readings fired at the same iteration in every
+  single run.** The window reading extended nothing, ever.
+
+The mechanism is arithmetic. Phase 1 measured total attainable headroom above
+the FM baseline at approximately **+0.0025**, across 79 experiments spanning
+objective, grouping, six feature families, three encoding schemes, field
+ablations, distribution-shift handling, a 19-config hyperparameter sweep and
+five ensembles. The stopping rule uses **eps = 0.002**. So eps is roughly **80%
+of the entire prize**.
+
+Under the per-iteration reading, an agent must clear 80% of the total available
+headroom in a single iteration or begin dying. Under the window reading it must
+clear it across three. Either way, **one good experiment is close to the entire
+budget**: make your jump, and the next three iterations — spent doing what
+careful experimental practice requires, isolating which part of the jump
+mattered — are by construction flat, and the run ends.
+
+This penalises exactly the behaviour the task otherwise asks for. An agent that
+bundles its best guesses and gets lucky survives longer than one that isolates
+variables, because isolation produces small individually-uninformative deltas
+that the rule reads as saturation.
+
+**This is a property of the benchmark interacting with its own stopping rule,
+not of any particular agent.** We report it as a critique with the six-run
+evidence behind it. It is independent of the convergence-reading ambiguity
+(POLICY.md §9): the null result on the window reading — zero extensions in six
+runs — is itself part of the evidence, and a disclosed choice that turned out
+not to matter is stronger evidence than one that quietly helped.
+
+### Corollary: cross-run structural variance is near zero
+
+Diffing the designated specs from round 2 confirms the agent is not exploring a
+wide space:
+
+| runs | result |
+|---|---|
+| 1 vs 2 | **byte-identical** |
+| 1 vs 3, 2 vs 3 | differ only in `cat_smooth`, `lambda_l2`, `min_data_in_leaf` |
+
+All three landed on `lightgbm · lambdarank · group_chunk=6 ·
+[base5, dur_feats, item_agg]`, and Phase 1 measured all three differing
+hyperparameter axes as flat. So the three runs are near-replicates rather than
+independent samples, the apparent run-to-run variation in which structural moves
+get found is small-sample noise around a strongly attracting configuration, and
+the scored run's structural outcome is substantially predetermined.
