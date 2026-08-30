@@ -1,23 +1,31 @@
 """Proposer: the LLM in the loop. Emits a ranked slate of candidate experiments.
 
-The contract is deliberately strict, because the contract is what makes the
-Innovation axis measurable. Every candidate must carry:
+The contract is strict, because the contract is what makes the Innovation axis
+measurable. Every candidate carries a hypothesis, a mechanistic rationale, an
+expected gain in primary units, and a derivation for that number citing at
+least one briefing fact by key.
 
-  hypothesis                what will be tried, in one sentence
-  rationale                 why it might work, mechanistically
-  expected_gain             a number, in primary units
-  expected_gain_derivation  how that number was arrived at, citing at least one
-                            briefing fact by key
-  spec                      a Tier A spec, or a Tier B patch
+A candidate with no cited fact still executes if it ranks, but its gain is
+discounted and the discount is recorded, on the stated ground that an expected
+gain with no derivation is an assertion rather than a prediction. The controller
+has NO opinion about which fact is cited.
 
-A candidate with no cited briefing fact is not rejected -- it is executed if it
-ranks -- but its uncited status is recorded, and the controller discounts it, on
-the stated ground that an expected gain with no derivation is an assertion
-rather than a prediction. This is a mechanism for making reasoning visible. It
-is NOT a ranking over which facts matter; the controller has no opinion about
-which fact a candidate cites.
+The slate is produced through the SDK's structured-output helper, so a malformed
+proposal is impossible by construction rather than caught by a parser. That
+matters here: an unattended scored run cannot afford to lose iterations to JSON
+formatting.
 """
 import json
+import os
+import random
+import time
+from typing import Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
+
+DEFAULT_MODEL = 'claude-opus-5'
+MAX_ATTEMPTS = 3
+BASE_BACKOFF_S = 2.0
 
 FACT_KEYS = {
     'WITHIN_USER_RANKING': 'Only within-user order affects the score.',
@@ -35,27 +43,71 @@ FACT_KEYS = {
     'POSITIVE_RATE': 'Positive rate ~0.31 on train and valid.',
 }
 
+
+# ---------------- structured output schema ----------------
+class Params(BaseModel):
+    learning_rate: Optional[float] = None
+    num_leaves: Optional[int] = None
+    min_data_in_leaf: Optional[int] = None
+    feature_fraction: Optional[float] = None
+    bagging_fraction: Optional[float] = None
+    max_cat_threshold: Optional[int] = None
+    cat_smooth: Optional[float] = None
+    lambda_l2: Optional[float] = None
+    lambdarank_truncation_level: Optional[int] = None
+
+
+class Spec(BaseModel):
+    model: Literal['fm', 'lightgbm']
+    objective: Optional[Literal['binary', 'lambdarank', 'rank_xendcg']] = None
+    group_chunk: Optional[int] = Field(None, description='None, 4, 6, 7, 10 or 20')
+    feature_blocks: List[str]
+    params: Params = Params()
+    seeds: List[int] = [0]
+    recency_decay: Optional[float] = None
+    min_date: Optional[int] = None
+
+
+class Candidate(BaseModel):
+    hypothesis: str
+    rationale: str
+    expected_gain: float
+    expected_gain_derivation: str
+    tier: Literal['A', 'B']
+    spec: Spec
+
+
+class Slate(BaseModel):
+    candidates: List[Candidate]
+
+
 SYSTEM = """You are an autonomous ML research agent working on a recommender
 ranking benchmark. You propose experiments; a deterministic harness executes
 them and returns metrics. You never see the test set.
 
-Each turn, return STRICT JSON: {"candidates": [ ... ]}, 3 to 6 candidates,
-each with keys: hypothesis, rationale, expected_gain (float, in primary units,
-your honest prediction), expected_gain_derivation (string; cite at least one
-FACT KEY in square brackets, e.g. [GROUP_SHAPE_MISMATCH], and say how that fact
-leads to your number), tier ("A" or "B"), spec (object).
+Each turn you return 3 to 6 candidate experiments. For each one:
+  hypothesis   - what will be tried, in one sentence
+  rationale    - why it might work, mechanistically
+  expected_gain - your honest prediction of the change in validation primary
+  expected_gain_derivation - how you arrived at that number. Cite at least one
+                 FACT KEY in square brackets, e.g. [GROUP_SHAPE_MISMATCH], and
+                 say how that fact leads to your number.
+  tier         - "A" for a parameterised spec the harness runs directly
+  spec         - the experiment configuration
 
 Rank honestly. Your expected_gain values determine execution order, so
 systematically inflating them costs you iterations on things that do not work.
-An expected gain of 0.000 is a legitimate prediction for a candidate you want
-to rule out cheaply; say so.
+An expected gain of 0.000 is a legitimate prediction for a candidate you want to
+rule out cheaply; say so in the derivation.
 
-Think about ORDER. You have 50 iterations and a convergence rule that stops the
-run if validation primary does not improve by more than 0.002 across 3
+Think hard about ORDER. You have 50 iterations and a convergence rule that ends
+the run if validation primary does not improve by more than 0.002 across 3
 consecutive iterations. Three unproductive iterations in a row will end your run
-whether or not you were near a real ceiling. So spend your early iterations on
-whatever you believe has the largest chance of a real effect, not on whatever is
-easiest to specify."""
+whether or not you were anywhere near a real ceiling. So spend your early
+iterations on whatever you believe has the largest chance of a real effect --
+not on whatever is easiest to specify, and not on the cheapest thing to rule
+out. Reason from the structural facts in the briefing about where a real effect
+could come from, before you reason about parameters."""
 
 
 class ProposerError(RuntimeError):
@@ -63,32 +115,23 @@ class ProposerError(RuntimeError):
 
 
 class Proposer:
-    """Backend-agnostic. `complete(system, user) -> (text, tokens_in, tokens_out)`."""
-
     def __init__(self, backend):
         self.backend = backend
 
     def propose(self, briefing, action_space_doc, history, stall, forced_high_variance):
         user = self._prompt(briefing, action_space_doc, history, stall,
                             forced_high_variance)
-        text, ti, to = self.backend.complete(SYSTEM, user)
-        try:
-            obj = json.loads(self._strip(text))
-            cands = obj['candidates']
-            assert isinstance(cands, list) and cands
-        except Exception as e:
-            raise ProposerError(f"unparseable proposal: {e}\n{text[:500]}")
+        slate, usage, recovery = self.backend.complete(SYSTEM, user)
+        cands = [c.model_dump() for c in slate.candidates]
+        if not cands:
+            raise ProposerError('proposer returned an empty slate')
         for c in cands:
+            c['spec'] = {k: v for k, v in c['spec'].items() if v is not None}
+            c['spec']['params'] = {k: v for k, v in (c['spec'].get('params') or {}).items()
+                                   if v is not None}
             c['cited_facts'] = [k for k in FACT_KEYS
-                                if f'[{k}]' in c.get('expected_gain_derivation', '')]
-        return cands, ti, to
-
-    @staticmethod
-    def _strip(t):
-        t = t.strip()
-        if t.startswith('```'):
-            t = t.split('\n', 1)[1].rsplit('```', 1)[0]
-        return t[t.index('{'):t.rindex('}') + 1]
+                                if f'[{k}]' in (c.get('expected_gain_derivation') or '')]
+        return cands, usage, recovery
 
     @staticmethod
     def _prompt(briefing, action_space_doc, history, stall, forced):
@@ -96,11 +139,9 @@ class Proposer:
                  '\n=== ACTION SPACE ===\n' + action_space_doc,
                  '\n=== FACT KEYS you may cite ===\n' +
                  '\n'.join(f'  [{k}] {v}' for k, v in FACT_KEYS.items())]
-        if history:
-            parts.append('\n=== WHAT YOU HAVE ALREADY TRIED ===\n' +
-                         json.dumps(history, indent=1, default=str))
-        else:
-            parts.append('\n=== WHAT YOU HAVE ALREADY TRIED ===\n(nothing yet)')
+        parts.append('\n=== WHAT YOU HAVE ALREADY TRIED ===\n' +
+                     (json.dumps(history, indent=1, default=str) if history
+                      else '(nothing yet)'))
         parts.append(f'\nConsecutive non-improving iterations so far: {stall}.')
         if forced:
             parts.append(
@@ -113,25 +154,101 @@ class Proposer:
 
 
 class AnthropicBackend:
-    def __init__(self, model='claude-opus-4-6', max_tokens=4000):
+    last_recovery = []
+
+    """Anthropic Messages API with structured output and logged backoff.
+
+    The API key is read from os.environ ONLY. It is never written to a file,
+    never logged, never printed, and never passed as an argument. If it is
+    absent we fail immediately with an actionable message rather than making a
+    request that would 401.
+
+    Retries are ours, not the SDK's (`max_retries=0`), so that every attempt is
+    visible as a recovery event in the run log. Retryable: 429, 5xx, connection
+    errors. Not retryable: 400/401/403/404, which are bugs or config problems and
+    will not fix themselves.
+    """
+
+    RETRYABLE_STATUS = (408, 409, 429, 500, 502, 503, 504, 529)
+
+    def __init__(self, model=DEFAULT_MODEL, max_tokens=16000, effort='high'):
         import anthropic
-        self.client = anthropic.Anthropic()
-        self.model, self.max_tokens = model, max_tokens
+        if not os.environ.get('ANTHROPIC_API_KEY'):
+            raise RuntimeError(
+                'ANTHROPIC_API_KEY is not set in the environment. The agent reads '
+                'it from os.environ only and will not prompt for or store a key. '
+                'Export it in the shell that launches the run, then retry.')
+        self.model, self.max_tokens, self.effort = model, max_tokens, effort
+        self._anthropic = anthropic
+        # SDK retries disabled so ours are the only ones and all are logged.
+        self.client = anthropic.Anthropic(max_retries=0)
 
     def complete(self, system, user):
-        r = self.client.messages.create(
-            model=self.model, max_tokens=self.max_tokens, system=system,
-            messages=[{'role': 'user', 'content': user}])
-        return (r.content[0].text, r.usage.input_tokens, r.usage.output_tokens)
+        A = self._anthropic
+        recovery = []
+        self.last_recovery = recovery
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            try:
+                r = self.client.messages.parse(
+                    model=self.model, max_tokens=self.max_tokens,
+                    system=system,
+                    messages=[{'role': 'user', 'content': user}],
+                    thinking={'type': 'adaptive'},
+                    output_config={'effort': self.effort},
+                    output_format=Slate,
+                )
+                if getattr(r, 'stop_reason', None) == 'refusal':
+                    raise ProposerError(
+                        f'model refused: {getattr(r, "stop_details", None)}')
+                usage = self._usage(r)
+                return r.parsed_output, usage, recovery
+            except (A.BadRequestError, A.AuthenticationError,
+                    A.PermissionDeniedError, A.NotFoundError) as e:
+                # Not retryable: a bug or a config problem, not transient.
+                recovery.append({'attempt': attempt, 'error': type(e).__name__,
+                                 'status': getattr(e, 'status_code', None),
+                                 'retryable': False, 'action': 'aborting proposal'})
+                raise ProposerError(f'{type(e).__name__}: {e}') from e
+            except (A.RateLimitError, A.APIStatusError, A.APIConnectionError) as e:
+                status = getattr(e, 'status_code', None)
+                retryable = (isinstance(e, (A.RateLimitError, A.APIConnectionError))
+                             or (status in self.RETRYABLE_STATUS))
+                if not retryable or attempt == MAX_ATTEMPTS:
+                    recovery.append({'attempt': attempt, 'error': type(e).__name__,
+                                     'status': status, 'retryable': retryable,
+                                     'action': 'giving up; controller routes around'})
+                    raise ProposerError(f'{type(e).__name__}: {e}') from e
+                delay = BASE_BACKOFF_S * (2 ** (attempt - 1))
+                if isinstance(e, A.RateLimitError):
+                    try:
+                        delay = max(delay, float(e.response.headers.get('retry-after', 0)))
+                    except Exception:
+                        pass
+                delay += random.uniform(0, 0.5 * delay)      # jitter
+                recovery.append({'attempt': attempt, 'error': type(e).__name__,
+                                 'status': status, 'retryable': True,
+                                 'action': f'backoff {delay:.1f}s, retry '
+                                           f'{attempt + 1}/{MAX_ATTEMPTS}'})
+                time.sleep(delay)
+        raise ProposerError('exhausted retries')
+
+    @staticmethod
+    def _usage(r):
+        u = r.usage
+        return {'input_tokens': u.input_tokens, 'output_tokens': u.output_tokens,
+                'cache_read_input_tokens': getattr(u, 'cache_read_input_tokens', 0) or 0,
+                'cache_creation_input_tokens': getattr(u, 'cache_creation_input_tokens', 0) or 0,
+                'model': r.model}
 
 
 class StubBackend:
-    """HARNESS TEST STUB. Exercises plumbing on --dry-run only.
+    last_recovery = []
 
-    It deliberately does NOT encode any conclusion from the manual probe: it
-    cycles arbitrary specs so the loop, guards, cache, logging and recovery
-    paths can be tested without an API key and without seeding an answer.
-    Never used in a scored run; the controller refuses it when mode='scored'.
+    """HARNESS TEST STUB. Plumbing only; refused in a scored run.
+
+    Deliberately encodes no conclusion from the manual probe -- it cycles
+    arbitrary specs so the loop, guards, cache, logging and recovery paths can be
+    exercised without an API key and without seeding an answer.
     """
 
     def __init__(self):
@@ -139,20 +256,21 @@ class StubBackend:
 
     def complete(self, system, user):
         import itertools
-        pool = [
-            ('binary', None, ['base5']), ('lambdarank', 20, ['base5', 'duration']),
-            ('rank_xendcg', None, ['base5', 'user_agg']),
-            ('binary', 6, ['base5', 'duration', 'item_agg']),
-            ('lambdarank', 4, ['base5', 'cf']),
-        ]
+        pool = [('binary', None, ['base5']), ('lambdarank', 20, ['base5', 'duration']),
+                ('rank_xendcg', None, ['base5', 'user_agg']),
+                ('binary', 6, ['base5', 'duration', 'item_agg']),
+                ('lambdarank', 4, ['base5', 'cf'])]
         picks = list(itertools.islice(itertools.cycle(pool), self.n, self.n + 3))
         self.n += 3
-        cands = [{'hypothesis': f'stub candidate {o}/{c}',
-                  'rationale': 'harness plumbing test, not a real hypothesis',
-                  'expected_gain': round(0.01 / (i + 1), 4),
-                  'expected_gain_derivation': 'stub, no derivation [POSITIVE_RATE]',
-                  'tier': 'A',
-                  'spec': {'model': 'lightgbm', 'objective': o, 'group_chunk': c,
-                           'feature_blocks': b, 'params': {}, 'seeds': [0]}}
-                 for i, (o, c, b) in enumerate(picks)]
-        return json.dumps({'candidates': cands}), 0, 0
+        slate = Slate(candidates=[
+            Candidate(hypothesis=f'stub candidate {o}/{c}',
+                      rationale='harness plumbing test, not a real hypothesis',
+                      expected_gain=round(0.01 / (i + 1), 4),
+                      expected_gain_derivation='stub, no derivation [POSITIVE_RATE]',
+                      tier='A',
+                      spec=Spec(model='lightgbm', objective=o, group_chunk=c,
+                                feature_blocks=b, seeds=[0]))
+            for i, (o, c, b) in enumerate(picks)])
+        return slate, {'input_tokens': 0, 'output_tokens': 0,
+                       'cache_read_input_tokens': 0,
+                       'cache_creation_input_tokens': 0, 'model': 'stub'}, []

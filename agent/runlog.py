@@ -15,10 +15,12 @@ import time
 
 
 class RunLog:
-    def __init__(self, path, run_id, mode='dev'):
+    def __init__(self, path, run_id, mode='dev', model=None):
         self.path = path
         self.run_id = run_id
         self.mode = mode                 # 'dev' or 'scored'
+        self.model = model               # exact model string, a Devpost field
+        self.cache_read = self.cache_write = 0
         self.t0 = time.time()
         self.interventions = 0
         self.tokens_in = self.tokens_out = 0
@@ -37,10 +39,14 @@ class RunLog:
                   expected_gain_derivation, spec, code_diff=None,
                   drift=None, metrics=None, diagnostic=None, accepted=None,
                   best_so_far=None, stall_count=None, error=None, recovery=None,
-                  seconds=None, tokens_in=0, tokens_out=0, cache=None, extra=None):
+                  seconds=None, tokens_in=0, tokens_out=0, cache=None,
+                  usage=None, api_recovery=None, extra=None):
         self.iterations = max(self.iterations, i + 1)
         self.tokens_in += tokens_in
         self.tokens_out += tokens_out
+        if usage:
+            self.cache_read += usage.get('cache_read_input_tokens', 0) or 0
+            self.cache_write += usage.get('cache_creation_input_tokens', 0) or 0
         rec = {
             'kind': 'ITERATION', 'run_id': self.run_id, 'mode': self.mode,
             'iteration': i, 'tier': tier,
@@ -65,6 +71,8 @@ class RunLog:
             # --- Feasibility axis ---
             'seconds': seconds,
             'tokens_in': tokens_in, 'tokens_out': tokens_out,
+            'llm_usage': usage, 'proposer_model': (usage or {}).get('model', self.model),
+            'api_recovery': api_recovery,
             'wall_clock_s': self._elapsed(),
             'cache': cache,
         }
@@ -81,6 +89,9 @@ class RunLog:
             'manual_interventions': self.interventions,
             'total_tokens_in': self.tokens_in, 'total_tokens_out': self.tokens_out,
             'total_tokens': self.tokens_in + self.tokens_out,
+            'cache_read_input_tokens': self.cache_read,
+            'cache_creation_input_tokens': self.cache_write,
+            'proposer_model': self.model,
             'agent_wall_clock_s': self._elapsed(),
             'gpu_hours': 0.0,
             'designated_submission': designated,

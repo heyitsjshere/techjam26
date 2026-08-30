@@ -40,14 +40,24 @@ MAX_ITERS = 50
 WALL_CLOCK_LIMIT_S = 6 * 3600
 UNCITED_DISCOUNT = 0.5      # applied to expected_gain when no fact is cited
 
+# Pre-registered in reports/POLICY.md section 7. Iteration 0 must reproduce the
+# official FM validation primary of 0.6016 to within 2 seed standard deviations
+# (2 x 0.0008 = 0.0016). Stated as a numeric criterion before the scored run so
+# that "did the baseline reproduce" is never a post-hoc judgement call.
+BASELINE_TARGET = 0.6016
+BASELINE_SEED_STD = 0.0008
+BASELINE_TOLERANCE = 2 * BASELINE_SEED_STD
+
 
 class Controller:
     def __init__(self, backend, log_path, run_id, mode='dev', max_iters=MAX_ITERS):
         if mode == 'scored' and backend.__class__.__name__ == 'StubBackend':
             raise RuntimeError('StubBackend is a plumbing test only; refused in a scored run')
+        self.backend = backend
         self.proposer = Proposer(backend)
         self.ex = Executor()
-        self.log = RunLog(log_path, run_id, mode=mode)
+        self.log = RunLog(log_path, run_id, mode=mode,
+                          model=getattr(backend, 'model', 'stub'))
         self.max_iters = max_iters
         self.history = []
         self.dead_actions = set()
@@ -69,7 +79,7 @@ class Controller:
             err, res = f'{type(e).__name__}: {e}', None
             rec_err = traceback.format_exc(limit=3)
         m = (res or {}).get('metrics')
-        ok = bool(m) and abs(m['primary'] - 0.6016) < 0.005
+        ok = bool(m) and abs(m['primary'] - BASELINE_TARGET) <= BASELINE_TOLERANCE
         self.best = (m['primary'], spec, 0) if m else None
         self.log.iteration(
             i=0, tier='A',
@@ -86,7 +96,10 @@ class Controller:
             accepted=ok, best_so_far=self.best[0] if self.best else None,
             stall_count=0, error=err, recovery=rec_err,
             seconds=round(time.time() - t0, 1), cache=(res or {}).get('cache'),
-            extra={'baseline_reproduced': ok, 'baseline_target': 0.6016})
+            extra={'baseline_reproduced': ok, 'baseline_target': BASELINE_TARGET,
+                   'baseline_tolerance': BASELINE_TOLERANCE,
+                   'baseline_deviation': None if not m else
+                       round(m['primary'] - BASELINE_TARGET, 5)})
         self.history.append({'iteration': 0, 'spec': spec, 'metrics': m,
                              'note': 'baseline reproduction'})
         return ok
@@ -101,22 +114,27 @@ class Controller:
                 return self._finish('wall-clock backstop reached', i)
             forced = (self.stall == N_STALL - 1)
             try:
-                cands, ti, to = self.proposer.propose(
+                cands, usage, api_recovery = self.proposer.propose(
                     briefing_mod.full_briefing(), self._action_doc(),
                     self.history[-12:], self.stall, forced)
             except ProposerError as e:
-                self.log.iteration(i=i, tier='A', hypothesis='(proposal failed)',
-                                   rationale='', expected_gain=0.0,
-                                   expected_gain_derivation='', spec=None,
-                                   error=str(e), recovery='retry next iteration',
-                                   drift=None, metrics=None, diagnostic=None,
-                                   accepted=False, best_so_far=self.best[0],
-                                   stall_count=self.stall, seconds=0)
+                # An API failure must never kill the run. Every attempt made by
+                # the backoff loop is logged as a recovery event.
+                self.log.iteration(
+                    i=i, tier='A', hypothesis='(proposal failed)', rationale='',
+                    expected_gain=0.0, expected_gain_derivation='', spec=None,
+                    error=str(e),
+                    recovery='proposal abandoned; requesting a fresh slate next '
+                             'iteration. Run continues.',
+                    api_recovery=list(getattr(self.backend, 'last_recovery', [])),
+                    drift=None, metrics=None, diagnostic=None, accepted=False,
+                    best_so_far=self.best[0] if self.best else None,
+                    stall_count=self.stall, seconds=0)
                 i += 1
                 continue
 
             ranked = self._rank(cands)
-            done = self._execute_first_viable(ranked, i, ti, to, forced)
+            done = self._execute_first_viable(ranked, i, usage, api_recovery, forced)
             if done is None:
                 i += 1
                 continue
@@ -135,7 +153,7 @@ class Controller:
             c['_uncited'] = not c.get('cited_facts')
         return sorted(cands, key=lambda c: -c['_effective_gain'])
 
-    def _execute_first_viable(self, ranked, i, ti, to, forced):
+    def _execute_first_viable(self, ranked, i, usage, api_recovery, forced):
         for c in ranked:
             key = self._key(c.get('spec'))
             if key in self.dead_actions:
@@ -161,19 +179,19 @@ class Controller:
                            'two failures: action marked dead, routing around it')
             if err and res is None:
                 self.dead_actions.add(key)
-                self._log_iter(i, c, None, err, rec, ti, to, forced)
+                self._log_iter(i, c, None, err, rec, usage, api_recovery, forced)
                 return None
-            self._log_iter(i, c, res, None, None, ti, to, forced)
+            self._log_iter(i, c, res, None, None, usage, api_recovery, forced)
             return True
         self._log_iter(i, {'hypothesis': '(all candidates dead or invalid)',
                            'rationale': '', 'expected_gain': 0.0,
                            'expected_gain_derivation': '', 'tier': 'A',
                            'spec': None}, None,
                        'no viable candidate', 'requesting a fresh slate',
-                       ti, to, forced)
+                       usage, api_recovery, forced)
         return None
 
-    def _log_iter(self, i, c, res, err, rec, ti, to, forced):
+    def _log_iter(self, i, c, res, err, rec, usage, api_recovery, forced):
         m = (res or {}).get('metrics')
         rejected = (res or {}).get('rejected_by')
         improved = bool(m) and (self.best is None or m['primary'] > self.best[0])
@@ -196,7 +214,10 @@ class Controller:
             diagnostic=(res or {}).get('diagnostic'),
             accepted=improved, best_so_far=self.best[0] if self.best else None,
             stall_count=self.stall, error=err, recovery=rec,
-            seconds=(res or {}).get('seconds'), tokens_in=ti, tokens_out=to,
+            seconds=(res or {}).get('seconds'),
+            tokens_in=(usage or {}).get('input_tokens', 0),
+            tokens_out=(usage or {}).get('output_tokens', 0),
+            usage=usage, api_recovery=api_recovery,
             cache=(res or {}).get('cache'),
             extra={'rejected_by': rejected, 'forced_high_variance': forced,
                    'cited_facts': c.get('cited_facts'),

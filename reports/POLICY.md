@@ -117,3 +117,68 @@ selection.
   results are never designated.
 - Marginal deltas measured from different origins are not additive and must not
   be summed to rank candidates. Interactions are measured, not inferred.
+
+## 7. Iteration-0 baseline reproduction tolerance — pre-registered
+
+Stated **before** the scored run so that "did the baseline reproduce" is a
+numeric criterion, never a post-hoc judgement.
+
+**Criterion.** Iteration 0 passes when the agent's validation primary is within
+**2 seed standard deviations** of the official FM baseline:
+
+```
+|primary − 0.6016| ≤ 2 × 0.0008 = 0.0016      →  accept
+```
+
+0.0008 is the organizers' published 5-seed standard deviation
+(`baseline_scores.json`). Two of them is a ~95% interval, so a correct pipeline
+fails this at roughly a 1-in-20 rate on seed noise alone — tight enough to catch
+a real pipeline defect, loose enough not to fail on chance.
+
+**On failure the run halts.** It does not continue and it does not retry with a
+different seed. A pipeline that cannot reproduce the baseline invalidates every
+delta measured against it, so continuing would produce numbers that look fine
+and mean nothing.
+
+Reference points: the Phase 0 manual reproduction hit 0.6015 (deviation
+−0.0001) and the harness smoke test hit 0.6014 (deviation −0.0002). Both pass
+with large margin. Implemented as `BASELINE_TOLERANCE` in
+`agent/controller.py`.
+
+*Awaiting confirmation of the 2σ figure.*
+
+## 8. Known limitation of the drift guard
+
+Stated as a limitation rather than a feature, and repeated in
+`reports/HARNESS_DESIGN.md`, because a guard described as complete is more
+dangerous than no guard at all.
+
+**The drift check is a backstop, not the primary defence.** The primary defence
+against target leakage is out-of-fold encoding **enforced at the code level**
+(`guards.check_encoding`, called from inside the encoder, so it also catches
+agent-written Tier B code that bypasses the spec schema). That is the mechanism
+that makes leakage structurally impossible for the aggregate features. The drift
+check exists to catch what that enforcement does not cover — a *new* feature
+family whose construction leaks by some route the encoder does not mediate.
+
+**Its calibration band is narrow.** The observations span 0.049 to 0.268 for
+legitimate blocks and 0.769 for the one known leak. Rejecting at 0.40 therefore:
+
+- **catches gross leakage**, of the magnitude Phase 1 actually produced;
+- **would miss a subtle leak** sitting anywhere around 0.30–0.40, and would very
+  likely miss one below 0.27, which is inside the legitimate range;
+- has **exactly one known-positive calibration point.** A threshold fitted to a
+  single positive example is weakly determined, and we do not claim otherwise.
+
+**It also cannot distinguish leakage from covariate shift.** Calibration
+demonstrated this directly: `dur_rank_in_list` drifts at 0.268 for a legitimate
+reason — it is a duration percentile computed *within* a user's list, and a
+percentile over 43.5 rows is not the same quantity as one over 5.6. That is the
+group-shape mismatch surfacing in the feature distribution, not a leak. The
+0.25 warn band exists to make such cases visible rather than to adjudicate
+them; a human reads them.
+
+**What follows.** A drift *pass* is not evidence a feature is sound. It means no
+gross leak was detected by a single-statistic test with one calibration point.
+Any new feature family that aggregates outcomes still requires the mechanical
+argument for why it cannot see its own row.
