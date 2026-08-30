@@ -83,4 +83,31 @@ tokens — confirming that adaptive thinking plus the briefing genuinely needs
 more than the original 16000 budget, which is what caused attempt 01's
 incomplete response in the first place.
 
-## Attempt 03 — see the results table
+## Attempt 03 — DISCARDED (wrong model; configuration defect)
+
+- **Killed deliberately** partway through, at iteration 0-1. No log retained
+  because the run had produced no completed iteration beyond the baseline.
+- **Cause:** `agent/run_agent.py` carried a hardcoded
+  `--model default='claude-opus-4-6'`, written before the API reference was
+  consulted, which **silently overrode** `proposer.DEFAULT_MODEL`
+  (`claude-opus-5`). The CLI default won because it was passed explicitly to the
+  backend constructor.
+
+**Attempts 01 and 02 also ran on `claude-opus-4-6`**, confirmed from their
+`proposer_model` fields. This is disclosed rather than quietly corrected: we had
+documented and reported the proposer as `claude-opus-5` throughout, so the
+harness was not doing what the documentation said, and the exact model string is
+a required deliverable field.
+
+The defect was invisible because the model string was faithfully logged —
+`proposer_model: claude-opus-4-6` appears in every record of both discarded runs.
+It was recorded correctly and simply never read back against the intended value.
+A logged value nobody checks is not a control.
+
+### Fix
+
+`run_agent.py` now imports `DEFAULT_MODEL` from `proposer` rather than repeating
+a literal, and `tests/test_designation.py` asserts the CLI hardcodes no model
+literal, references `DEFAULT_MODEL`, and that `DEFAULT_MODEL == 'claude-opus-5'`.
+
+## Attempt 04 — see the results table

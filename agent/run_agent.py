@@ -22,7 +22,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--mode', choices=['dev', 'scored'], default='dev')
     ap.add_argument('--backend', choices=['stub', 'anthropic'], default='stub')
-    ap.add_argument('--model', default='claude-opus-4-6')
+    # Must track proposer.DEFAULT_MODEL. A stale literal here silently
+    # overrode the backend default and ran two scored attempts on the wrong
+    # model; the exact string is a graded deliverable field.
+    from proposer import DEFAULT_MODEL
+    ap.add_argument('--model', default=DEFAULT_MODEL)
     ap.add_argument('--max-iters', type=int, default=50)
     ap.add_argument('--run-id', default=None)
     a = ap.parse_args()

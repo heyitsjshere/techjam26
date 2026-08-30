@@ -153,5 +153,19 @@ check("history carries 'cited_facts'", "'cited_facts': c.get('cited_facts')" in 
 check("history carries 'expected_gain_derivation'",
       "'expected_gain_derivation': c.get('expected_gain_derivation')" in src)
 
+print("\n=== the CLI model default must track the backend default ===")
+# Two scored attempts silently ran on the wrong model because run_agent.py
+# carried a hardcoded --model literal that overrode proposer.DEFAULT_MODEL.
+# The exact model string is a graded deliverable field.
+import re, pathlib as _pl
+import proposer as _prop
+_src = _pl.Path(os.path.join(ROOT, 'agent', 'run_agent.py')).read_text()
+check('run_agent hardcodes no model literal',
+      not re.search(r"add_argument\('--model', default='claude", _src),
+      'a hardcoded literal can drift from proposer.DEFAULT_MODEL')
+check('it references DEFAULT_MODEL instead', 'DEFAULT_MODEL' in _src)
+check('DEFAULT_MODEL is the intended model', _prop.DEFAULT_MODEL == 'claude-opus-5',
+      _prop.DEFAULT_MODEL)
+
 print(f"\n{len(PASS)} passed, {len(FAIL)} failed")
 sys.exit(1 if FAIL else 0)
