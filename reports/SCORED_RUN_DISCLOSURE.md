@@ -110,4 +110,39 @@ A logged value nobody checks is not a control.
 a literal, and `tests/test_designation.py` asserts the CLI hardcodes no model
 literal, references `DEFAULT_MODEL`, and that `DEFAULT_MODEL == 'claude-opus-5'`.
 
-## Attempt 04 — see the results table
+## Attempt 04 — **COMPLETED. This is the scored run.**
+
+- **Log:** `reports/runlog_scored_final.jsonl`
+- **Commit:** `49f38e93caa9a54d51985eddaa79d39da6fbd8a5`
+- **Proposer model:** `claude-opus-5` (verified in every record)
+
+| | |
+|---|---|
+| Validation primary (3-seed mean) | **0.60209** |
+| Delta vs official FM (0.6016) | **+0.00049** |
+| Iterations used | 4 of 50 |
+| Converged — window reading | iteration 3 |
+| Converged — per-iteration reading | iteration 3 |
+| Best-so-far curve | `[0.60141, 0.60208, 0.60209, 0.60209]` |
+| Per-iteration seed std | 0.00004, 0.00057, 0.00022, 0.00045 |
+| **Manual interventions** | **0** |
+| Tokens (in / out / total) | 28,688 / 22,258 / 50,946 |
+| Agent wall-clock | 444.0s (7.4 min) |
+| GPU-hours | 0.0 |
+
+**Designated submission:** `lightgbm · lambdarank · group_chunk=6 ·
+[base5, dur_feats, item_agg]`, from iteration 2.
+
+**Designation branch: `NO_DIVERGENCE`.** The best-valid config *is* the
+structurally-justified one — both criteria selected iteration 2, 3-seed mean
+0.60209, std 0.00022, against a band of 0.0008. `beats_baseline: true`.
+
+This is the null result the rule was built to be able to produce. It was
+executed, not asserted, and the record shows the two criteria agreeing rather
+than us claiming they would have.
+
+**Both convergence readings fired at iteration 3.** Consistent with every prior
+run: the window reading has now extended zero runs out of ten. The agent
+improved once (0.60141 → 0.60208), effectively plateaued (→ 0.60209), and
+stopped. That null result is reported as evidence, not buried — a disclosed
+choice that turned out not to matter is stronger than one that quietly helped.
