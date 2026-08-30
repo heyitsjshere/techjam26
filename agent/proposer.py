@@ -41,6 +41,9 @@ FACT_KEYS = {
     'HIGH_COVERAGE': '99.9% of valid videos appear in train.',
     'CEILING': 'Perfect ranking scores 0.8484 on valid; only 57.8% of users are influenceable.',
     'POSITIVE_RATE': 'Positive rate ~0.31 on train and valid.',
+    'ONE_CHANGE_PER_SPEC': 'A spec is scored as a whole; bundling changes destroys attribution.',
+    'CONVERGENCE_MECHANICS': 'Window reading: best(t) - best(t-3) <= 0.002 stops the run; gains accumulate inside the window.',
+    'SEED_NOISE': 'Every spec is run at 3 seeds; differences below ~0.0008 are seed noise.',
 }
 
 
@@ -57,11 +60,27 @@ class Params(BaseModel):
     lambdarank_truncation_level: Optional[int] = None
 
 
+class BlockChoice(BaseModel):
+    """A feature block, and why it is in THIS spec.
+
+    The justification is required. Without it the proposer can cite a fact in
+    its prose and then include blocks that contradict it -- which is exactly
+    what happened before this field existed. Naming a reason per block forces
+    the choice to be made rather than defaulted into, and it is also the part of
+    the run log that the Innovation axis is scored on.
+    """
+    block: str
+    justification: str = Field(
+        ..., description='Why this block belongs in this spec, given the '
+                         'briefing. One sentence. "It might help" is not a '
+                         'justification; name the mechanism or the fact.')
+
+
 class Spec(BaseModel):
     model: Literal['fm', 'lightgbm']
     objective: Optional[Literal['binary', 'lambdarank', 'rank_xendcg']] = None
     group_chunk: Optional[int] = Field(None, description='None, 4, 6, 7, 10 or 20')
-    feature_blocks: List[str]
+    feature_blocks: List[BlockChoice]
     params: Params = Params()
     seeds: List[int] = [0]
     recency_decay: Optional[float] = None
@@ -93,7 +112,10 @@ Each turn you return 3 to 6 candidate experiments. For each one:
                  FACT KEY in square brackets, e.g. [GROUP_SHAPE_MISMATCH], and
                  say how that fact leads to your number.
   tier         - "A" for a parameterised spec the harness runs directly
-  spec         - the experiment configuration
+  spec         - the experiment configuration. Every feature block you include
+                 must carry its own `justification` naming why THAT block belongs
+                 in THIS spec given the briefing. A block you cannot justify is a
+                 block you should not be including.
 
 Rank honestly. Your expected_gain values determine execution order, so
 systematically inflating them costs you iterations on things that do not work.
@@ -127,6 +149,10 @@ class Proposer:
             raise ProposerError('proposer returned an empty slate')
         for c in cands:
             c['spec'] = {k: v for k, v in c['spec'].items() if v is not None}
+            blocks = c['spec'].get('feature_blocks') or []
+            c['spec']['block_justifications'] = {
+                b['block']: b['justification'] for b in blocks}
+            c['spec']['feature_blocks'] = [b['block'] for b in blocks]
             c['spec']['params'] = {k: v for k, v in (c['spec'].get('params') or {}).items()
                                    if v is not None}
             c['cited_facts'] = [k for k in FACT_KEYS
@@ -286,7 +312,8 @@ class StubBackend:
                       expected_gain_derivation='stub, no derivation [POSITIVE_RATE]',
                       tier='A',
                       spec=Spec(model='lightgbm', objective=o, group_chunk=c,
-                                feature_blocks=b, seeds=[0]))
+                                feature_blocks=[BlockChoice(block=x, justification='stub') for x in b],
+                                seeds=[0]))
             for i, (o, c, b) in enumerate(picks)])
         return slate, {'input_tokens': 0, 'output_tokens': 0,
                        'cache_read_input_tokens': 0,

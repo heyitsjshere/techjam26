@@ -119,14 +119,52 @@ test window is unreachable. is_rand is constant 0 and is excluded. The listed
 same-row outcome columns are dropped at load time.
 """
 
+METHOD = """
+HOW THE HARNESS MEASURES YOU. These are properties of the measurement apparatus,
+not advice about what will work.
+
+A SPEC IS MEASURED AS A WHOLE. The harness runs the configuration you submit and
+reports one score for it. It does not decompose that score across the choices
+inside the spec. So if a spec changes the objective, the grouping and three
+feature blocks at once, a better or worse number tells you that the bundle moved
+the metric -- it does not tell you which part did, or whether one part helped
+while another hurt and the two partly cancelled. Bundling changes destroys
+attribution, and attribution is what lets your next proposal be better than a
+guess. Every block and every parameter you include is a claim you are making;
+the score you get back cannot separate those claims for you.
+
+EVERY SPEC IS EVALUATED AT 3 SEEDS. You receive the mean and the standard
+deviation. The baseline model's seed standard deviation is 0.0008, so a
+difference between two configurations that is smaller than roughly that is not
+distinguishable from seed noise, however suggestive it looks.
+"""
+
 CONVERGENCE = """
 BUDGET AND STOPPING.
   * Hard cap 50 iterations. Wall-clock backstop 6 hours. A full train+evaluate
     cycle costs roughly 10-60 seconds, so compute is not your binding
     constraint; iterations and honest convergence are.
-  * Convergence: validation primary has not improved by more than 0.002 over the
-    last 3 consecutive iterations. The baseline's seed standard deviation is
-    0.0008, so 0.002 is about 2.5 sigma.
+  * Convergence, exactly as this harness implements it. The organizers specify
+    the constants (epsilon = 0.002, N = 3) but not the implementation, and their
+    wording is ambiguous. We run the WINDOW reading:
+
+        the run stops when   best_so_far(t) - best_so_far(t-3)  <=  0.002
+
+    where t counts only iterations in which an experiment actually ran, and
+    best_so_far is the best 3-seed mean validation primary achieved up to that
+    point. Iteration 0 seeds best_so_far but is not itself a counting iteration.
+
+    Two consequences follow directly from that formula, and you should reason
+    about both. First, improvements ACCUMULATE inside the window: three
+    successive iterations gaining 0.001 each sum to 0.003, which exceeds 0.002,
+    and the run continues. (Those figures are arbitrary arithmetic to show the
+    mechanism; they are not an estimate of what any move is worth.) Second, the window slides, so a gain only protects you
+    for 3 counting iterations -- after that it leaves the window and stops
+    counting toward the sum.
+
+    The strict per-iteration reading (each single iteration must gain more than
+    0.002 on its own) is computed in parallel and logged for disclosure, but it
+    does not stop this run.
   * Because that rule can be satisfied by three unproductive iterations as
     easily as by genuine saturation, the ORDER you try things in determines
     whether you converge on a real ceiling or on your own choice of opening
@@ -139,4 +177,4 @@ BUDGET AND STOPPING.
 
 def full_briefing():
     return '\n'.join([TASK, DATA_SHAPE, ORGANIZER_FINDINGS, OBSERVATIONS,
-                      GUARDS, CONVERGENCE])
+                      GUARDS, METHOD, CONVERGENCE])

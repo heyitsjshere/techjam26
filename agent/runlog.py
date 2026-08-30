@@ -82,7 +82,7 @@ class RunLog:
         return rec
 
     def summary(self, *, designated, designation_reason, converged_at,
-                convergence_reason, final_metrics):
+                convergence_reason, final_metrics, extra=None):
         rec = {
             'kind': 'RUN_SUMMARY', 'run_id': self.run_id, 'mode': self.mode,
             'iterations_used': self.iterations, 'iteration_cap': 50,
@@ -101,6 +101,8 @@ class RunLog:
             'final_metrics': final_metrics,
             'git_commit': self._git_head(),
         }
+        if extra:
+            rec.update(extra)
         self._write(rec)
         return rec
 

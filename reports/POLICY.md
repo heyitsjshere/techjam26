@@ -182,3 +182,75 @@ them; a human reads them.
 gross leak was detected by a single-statistic test with one calibration point.
 Any new feature family that aggregates outcomes still requires the mechanical
 argument for why it cannot see its own row.
+
+## 9. Convergence rule — an ambiguity, our reading, and the disclosure
+
+Recorded **before** the scored run. We disclose this rather than quietly benefit
+from it.
+
+### The starter kit pins the constants, not the implementation
+
+We checked. There is **no convergence code anywhere in the starter kit**:
+
+- `baseline_scores.json` carries only `{"epsilon": 0.002, "N": 3}` — two numbers.
+- `evaluate.py` is purely metrics; it has no notion of iterations at all.
+- `baseline.py` has `patience=4` and an `eps`, but those are FM epoch
+  early-stopping and Adam's numerical epsilon — different mechanisms entirely,
+  not the agent-loop rule.
+- The only prose is `README.md:72–73`.
+
+### The prose is ambiguous, in Chinese as in English
+
+> 连续 3 轮迭代 validation 主分提升不超过 0.002 即判定收敛。
+
+Literally: "3 consecutive rounds of iteration [in which] validation primary
+improvement does not exceed 0.002 → judged converged." 提升 ("improvement") is
+unquantified as to whether it is *per round* or *cumulative across the three*.
+The English in the task brief — "has not improved by more than eps over the last
+3 consecutive iterations" — carries the same two readings. This is not a
+translation artifact; the ambiguity is in the original.
+
+| reading | test | behaviour |
+|---|---|---|
+| **window** (ours) | `best(t) − best(t−3) ≤ 0.002` | three gains of 0.001 sum to 0.003 → continues |
+| per-iteration | each of the last 3 gained ≤ 0.002 | three gains of 0.001 → converged |
+
+### Our choice, and why
+
+**We run the window reading.** Reasons, in order:
+
+1. It is the more natural reading of "improved by more than eps **over the last
+   N iterations**" — the phrase attaches the threshold to the span, not to each
+   element of it. The per-iteration reading needs "in **each** of the last N".
+2. The per-iteration reading makes N nearly inoperative. If every single
+   iteration must clear eps on its own, the rule is "stop after 3 iterations
+   that each individually failed to clear eps," and N is doing little work
+   beyond a retry count.
+3. It is measured against a 3-seed mean (§6), so seed noise cannot manufacture
+   the accumulation.
+
+**Disclosure.** The per-iteration reading is computed in parallel every run and
+the iteration at which it *would* have fired is logged as
+`converged_at_per_iteration` in every run summary and iteration record. The
+results table reports the converged iteration under **both** readings. If the
+organizers intended the strict reading, our run under it is reconstructable from
+our own logs without rerunning anything.
+
+**We note, without relying on it:** under the per-iteration reading eps = 0.002
+is close to the entire attainable headroom we measured in Phase 1 (~0.0025), so
+no sequence of genuine incremental gains can prevent convergence and only a
+single large jump can. That is a property of the benchmark and is reported on
+its own merits whichever reading is correct — it is not our argument for
+choosing the window reading, which rests on the grammar and on point 2 above.
+
+## 10. Iteration 0 does not start the stall counter
+
+Iteration 0 reproduces the baseline. It **seeds** best-so-far and the
+convergence window, but it is not an improvement attempt and does not count as
+one. This is the same principle already applied to proposal failures and empty
+slates: **only iterations in which an experiment actually ran are evidence about
+saturation.** A correctness precondition is not evidence that the metric has
+stopped moving.
+
+Consequence: the first three *experiment* iterations form the first convergence
+window, rather than the baseline consuming one of the three slots.

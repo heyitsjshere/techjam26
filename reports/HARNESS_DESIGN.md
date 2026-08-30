@@ -140,11 +140,30 @@ makes that number mean something:
   mismatch outranks feature work is the agent's call, made from the briefing,
   and visible in the log either way.
 
+## Convergence
+
+**The starter kit pins the constants, not the implementation** — there is no
+convergence code in it anywhere, and the only prose (`README.md:72–73`) is
+ambiguous in the original Chinese exactly as in English. We run the **window**
+reading, `best(t) − best(t−3) ≤ 0.002`, and compute the **per-iteration**
+reading in parallel, logging where each would fire in every run summary and
+every iteration record. Full reasoning and disclosure: POLICY.md §9.
+
+**Every spec is evaluated at 3 seeds** (POLICY.md §6). Selection, convergence
+and designation all use the mean; the std is logged. Seed std is ~0.0008 and
+real deltas here are the same order, so single-seed selection could not
+separate signal from noise — and designating a single-seed checkpoint would
+have violated our own pre-registration.
+
+**Iteration 0 seeds best-so-far and the convergence window but does not start
+the stall counter** (POLICY.md §10). It is a correctness precondition, not an
+improvement attempt — the same principle already applied to proposal failures.
+The first three *experiment* iterations therefore form the first window.
+
 ## Convergence hazard
 
-The rule (eps 0.002, N 3) is implemented exactly as stated, measured against
-**best-so-far** so a flat iteration after a real gain does not reset progress to
-the previous iteration's value. Three mechanisms address the hazard without
+Measured against **best-so-far** so a flat iteration after a real gain does not
+reset progress to the previous iteration's value. Three mechanisms address the hazard without
 hardcoding an ordering:
 
 1. Expected-gain ordering, above — derived by the proposer, logged with its

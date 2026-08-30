@@ -26,7 +26,10 @@ LOW = SEEN.lower()
 print("=== no Phase 1 measured delta leaks ===")
 # Any Phase 1 result value that would give away an outcome.
 FORBIDDEN_NUMBERS = ['0.6041', '0.6046', '0.6044', '0.6021', '0.5988', '0.6022',
-                     '0.0025', '0.0033', '0.0022', '0.0030', '0.0137', '0.6039']
+                     '0.0025', '0.0033', '0.0022', '0.0030', '0.0137', '0.6039',
+                     # magnitudes close enough to the measured delta that using
+                     # them as "examples" would hint at the achievable scale
+                     '0.0024', '0.0026', '0.0027', '0.0028', '0.0029']
 for n in FORBIDDEN_NUMBERS:
     check(f'{n} absent', n not in SEEN, 'leaked a Phase 1 measurement')
 
@@ -62,6 +65,17 @@ VALUE_WORDS = ['useless', 'redundant', 'no gain', 'ineffective', 'best', 'worst'
 for b, d in actionspace.FEATURE_BLOCKS.items():
     bad = [w for w in VALUE_WORDS if w in d.lower()]
     check(f'{b} description neutral', not bad, f'value words {bad}')
+
+print("\n=== new method facts present, still verdict-free ===")
+for frag, why in [('measured as a whole', 'bundling/attribution fact'),
+                  ('3 seeds', 'multi-seed evaluation stated'),
+                  ('best_so_far(t) - best_so_far(t-3)', 'window formula stated'),
+                  ('ACCUMULATE', 'accumulation consequence stated'),
+                  ('per-iteration reading', 'the other reading disclosed')]:
+    check(f'{why}', frag.lower() in LOW)
+for w in ['worth', 'will work', 'pays off', 'is the move', 'you will find']:
+    check(f'method section makes no promise: {w!r}',
+          f'{w} ' not in briefing.METHOD.lower())
 
 print("\n=== the structural facts the agent must reason FROM are present ===")
 for frag, why in [('43.5', 'train rows per user'), ('5.6', 'valid rows per user'),

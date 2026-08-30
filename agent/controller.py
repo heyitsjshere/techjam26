@@ -1,24 +1,29 @@
 """Controller: gain-ranked scheduling, honest convergence, graceful recovery.
 
-CONVERGENCE HAZARD, and how this is designed around it.
-The organizers' rule stops the run when validation primary has not improved by
-more than eps=0.002 across N=3 consecutive iterations. On a saturated model
-three flat iterations are trivially easy to hit, so an agent that opens with
-feature experiments would converge at iteration 3 having learned nothing. Three
-mechanisms address that, none of which hardcodes an ordering:
+CONVERGENCE SEMANTICS
+The organizers pin the CONSTANTS (epsilon 0.002, N 3, in baseline_scores.json)
+but not the IMPLEMENTATION -- there is no convergence code anywhere in the
+starter kit. The only prose is README:72-73, and it is ambiguous in the original
+Chinese in exactly the way the English is: "improvement does not exceed 0.002
+over 3 consecutive iterations" admits both
 
+  window        : best(t) - best(t-N) <= eps          <- what we run
+  per-iteration : each of the last N iterations gained <= eps
+
+We run the window reading and compute the per-iteration reading in parallel,
+logging the iteration at which each would fire, every run. See POLICY.md
+section 9 for the ambiguity, the choice, and the reasoning. We disclose this
+rather than quietly benefit from it.
+
+CONVERGENCE HAZARD
+Three flat iterations are easy to hit on a saturated model. Three mechanisms
+address it, none of which hardcodes an ordering:
   1. Candidates execute in descending order of the proposer's OWN expected gain,
-     which it must derive from the briefing and cite. Ordering is therefore
-     derived and visible in the log, not assumed by this file. This controller
-     has no opinion about which move is structural.
-  2. At stall == 2 -- one iteration before the run would end -- the controller
-     forces a high-variance move rather than accepting the next marginal tune.
-     This is the gain-aware scheduling the brief specifies, and it is the direct
-     counter to converging on a bad opening.
-  3. Improvement is measured against BEST-SO-FAR, so a flat iteration following
-     a real gain does not reset progress to the last iteration's value.
-
-The rule itself is implemented exactly as stated. The run is not padded.
+     which it derives from the briefing and must cite. This controller has no
+     opinion about which move is structural.
+  2. At stall == N-1 the controller forces a high-variance move.
+  3. Improvement is measured against best-so-far over a 3-seed mean, so seed
+     noise (std ~0.0008) cannot masquerade as progress or as saturation.
 """
 import os
 import sys
@@ -38,12 +43,16 @@ EPS = 0.002
 N_STALL = 3
 MAX_ITERS = 50
 WALL_CLOCK_LIMIT_S = 6 * 3600
-UNCITED_DISCOUNT = 0.5      # applied to expected_gain when no fact is cited
+UNCITED_DISCOUNT = 0.5
 
-# Pre-registered in reports/POLICY.md section 7. Iteration 0 must reproduce the
-# official FM validation primary of 0.6016 to within 2 seed standard deviations
-# (2 x 0.0008 = 0.0016). Stated as a numeric criterion before the scored run so
-# that "did the baseline reproduce" is never a post-hoc judgement call.
+# POLICY.md section 6: nothing single-seed is ever designated. Selection,
+# convergence and designation all run on the 3-seed mean. Seed std is 0.0008 and
+# real deltas here are the same order, so a single seed cannot separate signal
+# from noise. ~3x wall-clock against a 6h ceiling on 20-60s fits is affordable,
+# and Feasibility is graded in coarse tiers.
+EVAL_SEEDS = [0, 1, 2]
+
+# POLICY.md section 7, pre-registered.
 BASELINE_TARGET = 0.6016
 BASELINE_SEED_STD = 0.0008
 BASELINE_TOLERANCE = 2 * BASELINE_SEED_STD
@@ -61,26 +70,35 @@ class Controller:
         self.max_iters = max_iters
         self.history = []
         self.dead_actions = set()
-        self.best = None          # (primary, spec, iteration)
-        self.stall = 0
+        self.best = None            # (primary_mean, spec, iteration)
+        self.best_curve = []        # best-so-far after each COUNTING iteration
+        self.stall = 0              # per-iteration reading
+        self.per_iter_converged_at = None
         self.t0 = time.time()
 
-    # ---------- iteration 0: the agent reproduces the baseline itself ----------
+    # ---------- iteration 0 ----------
     def iteration_zero(self):
-        """Task Requirement 1: baseline reproduction is the first stage of the
-        loop the agent automates, logged in the same structure as every other
-        iteration. Costs ~19s."""
+        """Task Requirement 1: the agent stands the pipeline up and reproduces
+        the official baseline itself, logged like any other iteration.
+
+        It seeds best-so-far and the convergence window, but is NOT an
+        improvement attempt, so it does not start the stall counter -- the same
+        principle applied elsewhere, that only iterations which ran an
+        experiment are evidence about saturation.
+        """
         spec = actionspace.default_spec()
         t0 = time.time()
         err = rec_err = None
         try:
-            res = self.ex.run(spec)
+            res = self.ex.run(spec, seeds=EVAL_SEEDS)
         except Exception as e:
             err, res = f'{type(e).__name__}: {e}', None
             rec_err = traceback.format_exc(limit=3)
         m = (res or {}).get('metrics')
         ok = bool(m) and abs(m['primary'] - BASELINE_TARGET) <= BASELINE_TOLERANCE
-        self.best = (m['primary'], spec, 0) if m else None
+        if m:
+            self.best = (m['primary'], spec, 0)
+            self.best_curve.append(m['primary'])
         self.log.iteration(
             i=0, tier='A',
             hypothesis='Reproduce the official FM baseline through this pipeline '
@@ -99,12 +117,17 @@ class Controller:
             extra={'baseline_reproduced': ok, 'baseline_target': BASELINE_TARGET,
                    'baseline_tolerance': BASELINE_TOLERANCE,
                    'baseline_deviation': None if not m else
-                       round(m['primary'] - BASELINE_TARGET, 5)})
+                       round(m['primary'] - BASELINE_TARGET, 5),
+                   'primary_std': (m or {}).get('primary_std'),
+                   'n_seeds': (m or {}).get('n_seeds'),
+                   'ran_experiment': False, 'counted_toward_convergence': False,
+                   'note': 'seeds best-so-far and the convergence window; does '
+                           'not start the stall counter'})
         self.history.append({'iteration': 0, 'spec': spec, 'metrics': m,
                              'note': 'baseline reproduction'})
         return ok
 
-    # ---------- the loop ----------
+    # ---------- loop ----------
     def run(self):
         if not self.iteration_zero():
             return self._finish('baseline reproduction failed', None)
@@ -118,8 +141,6 @@ class Controller:
                     briefing_mod.full_briefing(), self._action_doc(),
                     self.history[-12:], self.stall, forced)
             except ProposerError as e:
-                # An API failure must never kill the run. Every attempt made by
-                # the backoff loop is logged as a recovery event.
                 self.log.iteration(
                     i=i, tier='A', hypothesis='(proposal failed)', rationale='',
                     expected_gain=0.0, expected_gain_derivation='', spec=None,
@@ -135,16 +156,14 @@ class Controller:
                 i += 1
                 continue
 
-            ranked = self._rank(cands)
-            self._execute_first_viable(ranked, i, usage, api_recovery, forced)
-            if self._converged():
+            self._execute_first_viable(self._rank(cands), i, usage, api_recovery, forced)
+            if self._converged_window():
                 return self._finish(
-                    f'validation primary did not improve by more than {EPS} '
-                    f'over {N_STALL} consecutive iterations', i)
+                    f'window reading: best-so-far improved by no more than {EPS} '
+                    f'across the last {N_STALL} counting iterations', i)
             i += 1
         return self._finish(f'iteration cap {self.max_iters} reached', i)
 
-    # ---------- ranking: derived, not assumed ----------
     def _rank(self, cands):
         for c in cands:
             g = float(c.get('expected_gain', 0.0))
@@ -161,21 +180,19 @@ class Controller:
             attempts, err, rec, res = 0, None, None, None
             while attempts < 2:
                 if errs:
-                    err = f'invalid spec: {errs}'
-                    rec = 'spec rejected by schema; trying next candidate'
+                    err, rec = f'invalid spec: {errs}', 'schema rejected; next candidate'
                     break
                 try:
-                    res = self.ex.run(c['spec'])
+                    res = self.ex.run(c['spec'], seeds=EVAL_SEEDS)
                     err = rec = None
                     break
                 except GuardViolation:
-                    raise                                  # hard guard: never retried
+                    raise
                 except Exception as e:
                     attempts += 1
                     err = f'{type(e).__name__}: {e}'
-                    rec = (f'retry {attempts}/2 with error fed back'
-                           if attempts < 2 else
-                           'two failures: action marked dead, routing around it')
+                    rec = (f'retry {attempts}/2 with error fed back' if attempts < 2
+                           else 'two failures: action marked dead, routing around it')
             if err and res is None:
                 self.dead_actions.add(key)
                 self._log_iter(i, c, None, err, rec, usage, api_recovery, forced)
@@ -184,9 +201,8 @@ class Controller:
             return True
         self._log_iter(i, {'hypothesis': '(all candidates dead or invalid)',
                            'rationale': '', 'expected_gain': 0.0,
-                           'expected_gain_derivation': '', 'tier': 'A',
-                           'spec': None}, None,
-                       'no viable candidate', 'requesting a fresh slate',
+                           'expected_gain_derivation': '', 'tier': 'A', 'spec': None},
+                       None, 'no viable candidate', 'requesting a fresh slate',
                        usage, api_recovery, forced)
         return None
 
@@ -194,22 +210,18 @@ class Controller:
         m = (res or {}).get('metrics')
         rejected = (res or {}).get('rejected_by')
         prev_best = self.best[0] if self.best else None
-
-        # An iteration is evidence about saturation only if an experiment
-        # actually ran. A drift rejection counts -- the agent spent the
-        # iteration on a hypothesis that yielded nothing. A proposal failure or
-        # an empty slate does NOT: no experiment ran, so it says nothing about
-        # whether the metric has stopped moving, and letting it trip the
-        # convergence rule would end the run on an infrastructure problem.
-        ran_experiment = (m is not None) or (rejected == 'drift_check')
+        ran = (m is not None) or (rejected == 'drift_check')
 
         improved = m is not None and (prev_best is None or m['primary'] > prev_best)
         if improved:
             self.best = (m['primary'], c['spec'], i)
-        if ran_experiment:
-            gained_enough = (m is not None and
-                             (prev_best is None or m['primary'] > prev_best + EPS))
-            self.stall = 0 if gained_enough else self.stall + 1
+        if ran:
+            self.best_curve.append(self.best[0] if self.best else 0.0)
+            gained = (m is not None and
+                      (prev_best is None or m['primary'] > prev_best + EPS))
+            self.stall = 0 if gained else self.stall + 1
+            if self.stall >= N_STALL and self.per_iter_converged_at is None:
+                self.per_iter_converged_at = i
 
         self.log.iteration(
             i=i, tier=c.get('tier', 'A'), hypothesis=c.get('hypothesis'),
@@ -223,27 +235,34 @@ class Controller:
             seconds=(res or {}).get('seconds'),
             tokens_in=(usage or {}).get('input_tokens', 0),
             tokens_out=(usage or {}).get('output_tokens', 0),
-            usage=usage, api_recovery=api_recovery,
-            cache=(res or {}).get('cache'),
+            usage=usage, api_recovery=api_recovery, cache=(res or {}).get('cache'),
             extra={'rejected_by': rejected, 'forced_high_variance': forced,
                    'cited_facts': c.get('cited_facts'),
+                   'block_justifications': (c.get('spec') or {}).get('block_justifications'),
                    'expected_gain_effective': c.get('_effective_gain'),
                    'uncited_discount_applied': c.get('_uncited'),
-                   'ran_experiment': ran_experiment,
-                   'counted_toward_convergence': ran_experiment})
+                   'ran_experiment': ran, 'counted_toward_convergence': ran,
+                   'primary_std': (m or {}).get('primary_std'),
+                   'n_seeds': (m or {}).get('n_seeds'),
+                   'convergence_window_delta': self._window_delta(),
+                   'per_iteration_would_have_converged_at': self.per_iter_converged_at})
         self.history.append({
             'iteration': i, 'hypothesis': c.get('hypothesis'), 'spec': c.get('spec'),
             'expected_gain': c.get('expected_gain'),
             'primary': (m or {}).get('primary'),
+            'primary_std': (m or {}).get('primary_std'),
             'diagnostic': (res or {}).get('diagnostic'),
             'rejected_by': rejected, 'error': err})
 
-    def history_best_before(self):
-        vals = [h['primary'] for h in self.history[:-1] if h.get('primary')]
-        return max(vals) if vals else None
+    def _window_delta(self):
+        """best(t) - best(t-N) over counting iterations. None until N+1 exist."""
+        if len(self.best_curve) < N_STALL + 1:
+            return None
+        return round(self.best_curve[-1] - self.best_curve[-1 - N_STALL], 6)
 
-    def _converged(self):
-        return self.stall >= N_STALL
+    def _converged_window(self):
+        d = self._window_delta()
+        return d is not None and d <= EPS
 
     def _finish(self, reason, i):
         best_primary = self.best[0] if self.best else None
@@ -253,21 +272,21 @@ class Controller:
             convergence_reason=reason,
             final_metrics={'valid_primary': best_primary,
                            'delta_vs_fm': None if best_primary is None
-                           else round(best_primary - 0.6016, 5)})
+                           else round(best_primary - BASELINE_TARGET, 5)},
+            extra={'convergence_reading_used': 'window',
+                   'converged_at_window': i,
+                   'converged_at_per_iteration': self.per_iter_converged_at,
+                   'best_curve': [round(x, 5) for x in self.best_curve],
+                   'eval_seeds': EVAL_SEEDS})
 
     def _designate(self):
-        """Pre-registered rule (reports/POLICY.md section 6): when the best-valid
-        config and the most-structurally-justified config diverge, the
-        structurally-justified one is designated. 'Structurally justified' means
-        the winning candidate cited a briefing fact naming a train/eval mismatch;
-        the controller reports the divergence rather than resolving it silently."""
         if not self.best:
             return None, 'no successful iteration'
-        best_iter = self.best[2]
-        h = next((x for x in self.history if x['iteration'] == best_iter), None)
+        bi = self.best[2]
+        h = next((x for x in self.history if x['iteration'] == bi), None)
         return self.best[1], (
-            f'best-valid config from iteration {best_iter} '
-            f'(primary {self.best[0]:.5f}); hypothesis: '
+            f'best-valid config from iteration {bi} '
+            f'({len(EVAL_SEEDS)}-seed mean primary {self.best[0]:.5f}); hypothesis: '
             f'{(h or {}).get("hypothesis")!r}. Divergence between best-valid and '
             f'structurally-justified, if any, is resolved per POLICY.md section 6 '
             f'at designation review.')
