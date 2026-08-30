@@ -26,6 +26,7 @@ import guards
 import loader
 import metrics
 from cache import BlockCache
+from grouping import group_sizes
 
 NTHREAD = max(1, (os.cpu_count() or 4) - 1)
 DEFAULT_PARAMS = dict(metric='None', eval_at=[5], learning_rate=0.05,
@@ -36,25 +37,6 @@ DEFAULT_PARAMS = dict(metric='None', eval_at=[5], learning_rate=0.05,
 
 class ExecutionError(RuntimeError):
     pass
-
-
-def group_sizes(users, chunk=None):
-    order = np.argsort(users, kind='stable')
-    _, counts = np.unique(users[order], return_counts=True)
-    if chunk is None:
-        return order, counts.astype(np.int32)
-    out = []
-    for c in counts.tolist():
-        n, r = divmod(c, chunk)
-        blocks = [chunk] * n
-        if r:
-            blocks[-1] += r if blocks else 0
-            if not blocks:
-                blocks = [r]
-        out.extend(blocks)
-    g = np.array(out, np.int32)
-    assert g.sum() == len(users)
-    return order, g
 
 
 class _Stopper:

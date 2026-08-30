@@ -20,36 +20,11 @@ import diagnostics
 import features as F
 import loader
 import metrics
+from grouping import group_sizes
 
 LOG = os.path.join(ROOT, 'reports', 'phase1_log.jsonl')
 BASELINE = 0.6016            # official FM valid primary
 NTHREAD = max(1, (os.cpu_count() or 4) - 1)
-
-
-def group_sizes(users, chunk=None):
-    """Contiguous LightGBM group counts.
-
-    `chunk` caps group size to match the ~6-row lists the evaluation actually
-    sees. Sorting is stable, so a user's rows stay in chronological file order
-    and each chunk is a consecutive time-slice of that user's impressions.
-    """
-    order = np.argsort(users, kind='stable')
-    _, counts = np.unique(users[order], return_counts=True)
-    if chunk is None:
-        return order, counts.astype(np.int32)
-    out = []
-    for c in counts.tolist():
-        n, r = divmod(c, chunk)
-        blocks = [chunk] * n
-        if r:
-            if blocks:
-                blocks[-1] += r          # fold remainder into the last block
-            else:
-                blocks = [r]             # user has fewer rows than one chunk
-        out.extend(blocks)
-    g = np.array(out, np.int32)
-    assert g.sum() == len(users), (g.sum(), len(users))
-    return order, g
 
 
 class EvalPyStopper:
