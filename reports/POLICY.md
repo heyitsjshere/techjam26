@@ -254,3 +254,140 @@ stopped moving.
 
 Consequence: the first three *experiment* iterations form the first convergence
 window, rather than the baseline consuming one of the three slots.
+
+## 11. Clarification of §6 — designation, disambiguated and made executable
+
+**Timestamped 2026-08-30T15:03:29Z (UTC). Written before any scored run has been started;
+none has.** This clarifies a clause that was internally ambiguous as written,
+and corrects a policy/code mismatch. Both are disclosed rather than quietly
+repaired.
+
+### The ambiguity
+
+§6 contains two clauses that can conflict:
+
+- *"If the best-valid config and the most-structurally-justified config diverge,
+  the structurally-justified config is designated"* — reads **unconditional**.
+- *"Ties (within 1 seed std) resolve to the structurally-justified config"* —
+  implies a **band**, and would be redundant if the first clause were truly
+  unconditional.
+
+Read together they do not determine what happens when the structural config is
+worse by a wide margin. Taken literally, the first clause would designate a
+structural config that lost by 0.05, which no one intended.
+
+### The resolution — the conjunction
+
+**Structural is designated when it diverges from best-valid AND is within one
+seed standard deviation of it. Beyond that band, best-valid is designated and
+the divergence is logged as a prominent record.**
+
+    band = 0.0008                     # the organizers' published 5-seed std
+
+    no structural candidate exists          -> record_intervention(), designate best-valid
+    structural config IS best-valid         -> no divergence; designate it
+    best_valid.primary - structural.primary <= band  -> designate STRUCTURAL
+    otherwise                                        -> designate BEST-VALID, log divergence
+
+The band is fixed at the **published** 0.0008 rather than at either config's own
+measured std. A pre-registered constant cannot be tuned after seeing results; a
+data-dependent band could be. Both configs' measured 3-seed stds are logged
+alongside, so the alternative is reconstructable.
+
+A config counts as **structurally justified** when the iteration that produced
+it cited at least one of `GROUP_SHAPE_MISMATCH`, `POINTWISE_BASELINE`,
+`USER_CONSTANT_NO_EFFECT`, `WITHIN_USER_RANKING` — the fact keys naming a
+train/eval mismatch or a property of the metric's form, as opposed to a
+parameter choice or a feature hunch.
+
+### Why this needed fixing at all
+
+`_designate()` returned best-valid unconditionally and stated the structural
+rule inside its reason string as a promise that a human would apply it "at
+designation review". That is a **policy/code mismatch**, and it makes the single
+most consequential decision of the run an **unlogged manual intervention**. Our
+zero-intervention claim was true of the loop and not true of the submission.
+
+The rule is now executed in code. **There is no path where a human silently
+decides**: if the rule cannot resolve a case — for example, no iteration cited a
+structural fact — `record_intervention()` fires, the intervention counter
+increments, and the reason says so. A run that needs a human to pick the
+submission will report a non-zero intervention count, which is the honest
+outcome.
+
+### What a null result here means
+
+If the designation record shows **no divergence** — the best-valid config is
+also the structurally-justified one — that is not a wasted mechanism. It is the
+useful output: the rule was executed and demonstrated rather than asserted, and
+the record proves the two criteria agreed rather than leaving us to claim they
+would have.
+
+## 12. Policy audit — which clauses are executable, which are promises
+
+Prompted by the §6 gap. Every clause in this document is classified below as
+**CODE** (a mechanism enforces it, and a test proves the mechanism fires) or
+**PROMISE** (a human keeps it; nothing in the harness can compel it). The
+distinction matters because a promise written in the grammar of a mechanism is
+worse than an honest promise — it invites everyone, us included, to believe
+something is guaranteed when it is not.
+
+| § | Clause | Status | Mechanism / test |
+|---|---|---|---|
+| 1 | Lock 1: test rows never enter the agent's process | **CODE** | `loader.load_agent` date-filters at parse; `test_firewall.py` |
+| 1 | Lock 2: evaluate wrapper rejects test-window data | **CODE** | `firewall.assert_agent_safe`; breach test forges both routes |
+| 1 | Selection and convergence use valid exclusively | **CODE** | no code path can construct a test split |
+| 1 | Test scored **exactly once** | **PROMISE** | see gap 2 below |
+| 1 | The test result cannot change the submission | **PROMISE** | see gap 3 below |
+| 2 | Diagnostic clipped to the valid window | **CODE** | `diagnostics.load_unbiased_diag` asserts `max_date <= VALID_END` |
+| 2 | Diagnostic never trained on | **CODE** | loader never includes it in train |
+| 2 | Diagnostic never in selection or convergence | **CODE (by construction)** | no decision path reads `DIAG_*`; not separately asserted — see gap 4 |
+| 3 | `evaluate.py` is the only scorer, never LightGBM ndcg | **CODE** | `metrics.score` wraps it; `metric='None'`; stopper calls `metrics.score` |
+| 4 | Same-row outcome columns dropped at load | **CODE** | `firewall.assert_no_deny_columns`; tested |
+| 4 | `is_rand` excluded | **CODE** | `DEAD_COLUMNS`, dropped in `_to_split` |
+| 4 | `log_random` never trained on | **CODE** | never referenced by the train path |
+| 4 | No external training data, no pretrained weights | **PROMISE** | nothing to enforce; none used |
+| 5 | Dev and scored runs kept separate | **CODE** | `mode` flag, separate log files, `StubBackend` refused when scored |
+| 5 | Every human touch increments the counter | **PROMISE** | `record_intervention()` must be called; a human who edits silently is not detected |
+| 6 | Nothing single-seed is designated | **CODE** | `EVAL_SEEDS = [0,1,2]`, forced by the controller |
+| 6 | Structural outranks best-valid, per the §11 conjunction | **CODE** *(was the gap; now fixed)* | `_designate()`; `test_designation.py`, 25 assertions, all five branches |
+| 6 | Deltas from different origins are not summed | **PROMISE** | analysis discipline; Phase 1 addendum documents the one time we got it wrong |
+| 7 | Iteration-0 tolerance, run halts on failure | **CODE** | `BASELINE_TOLERANCE`; `iteration_zero` returns False and `run()` finishes |
+| 8 | Drift gate blocks the metric | **CODE** | `Executor.run` order: build → drift → *only if passed* → train |
+| 8 | The guard's stated limitations | **DISCLOSURE** | not a mechanism; deliberately written as limits |
+| 9 | Window reading runs; per-iteration logged in parallel | **CODE** | `_converged_window` / `per_iter_converged_at`; both in every summary |
+| 10 | Iteration 0 does not start the stall counter | **CODE** | `ran_experiment=False`; window seeded, stall untouched |
+| 11 | Designation conjunction and the intervention fallback | **CODE** | `_designate()` branches; `record_intervention()` on the unresolvable case |
+
+### Was §6 the only gap? For that class of defect, yes.
+
+§6 was the only place where **prose asserted a rule that the code actively
+contradicted**. Every other CODE row was already enforced, and the audit found no
+second instance of a mechanism claimed but absent.
+
+But the audit did surface three weaker spots that were previously unstated. None
+is a policy/code contradiction; all three are promises that read stronger than
+they are, and they are recorded here rather than left implicit.
+
+**Gap 2 — "test scored exactly once" is unenforced.** `human_only_test_scoring.py`
+requires an explicit confirmation flag and is not importable by the agent, but
+nothing stops it being run twice. *Mechanizable:* write a one-shot marker on
+first use and refuse subsequent runs. Not implemented; flagged for a decision.
+
+**Gap 3 — "the test result cannot change the submission" is unenforceable as
+written.** A human can always edit afterwards. *Mechanizable in part:* hash the
+designated submission and commit it to git **before** test scoring runs, so any
+later change is visible in history rather than prevented. Not implemented;
+flagged.
+
+**Gap 4 — the diagnostic's exclusion from selection is true by construction, not
+by assertion.** No decision path reads `DIAG_*` keys, but nothing fails if a
+future edit introduces one. *Mechanizable:* assert that decision inputs contain
+no `DIAG_`-prefixed key. Low risk today, cheap insurance later.
+
+**Gap 5 — the intervention counter depends on being called.** `record_intervention()`
+now fires on the one decision the harness makes that could otherwise be silent,
+but a human who edits state mid-run is not detected. This is irreducible: the
+counter measures honesty, it cannot manufacture it. What the harness can do — and
+now does — is ensure the *agent loop itself* contains no unlogged human decision
+point.

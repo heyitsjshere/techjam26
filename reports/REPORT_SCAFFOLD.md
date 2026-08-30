@@ -273,3 +273,61 @@ to separate the two, so **whether a run clears the baseline depends materially
 on an arbitrary early hyperparameter draw**. One dev run in three did not clear
 it. That is a property of the benchmark's headroom-to-eps ratio, not a fixable
 defect in the agent, and the scored run carries that risk.
+
+## F8 — A pre-registered rule that is not executable is not pre-registration. *(primary finding)*
+
+POLICY.md §6 pre-registered that, on divergence, the structurally-justified
+config outranks the best-valid one — with the stated reasoning that 79
+valid-selected experiments carry selection risk a structural fix does not.
+
+**The code did not implement it.** `_designate()` returned best-valid
+unconditionally and stated the rule inside its own reason string as a promise
+that a human would apply it "at designation review". So the single most
+consequential decision of the entire run — which submission gets scored — was
+not made by the agent, was not made by the rule, and was not logged. It was an
+**unlogged manual intervention wearing policy language**.
+
+The failure is precise and worth stating precisely: our zero-intervention claim
+was **true of the loop and false of the submission**. Every iteration ran without
+a human. The choice of what to submit did not.
+
+### Why this one slipped when nothing else did
+
+Everything else in this harness is enforced by a mechanism, and each has a test
+that proves the mechanism fires:
+
+| policy | mechanism | proof it fires |
+|---|---|---|
+| test-set firewall | two independent locks | forged breaches raise `FirewallBreach` |
+| out-of-fold encoding only | check inside the encoder | `loo` and `naive` both raise in agent mode |
+| drift gate | build → check → *only if passed* → train | no code path yields a metric for a failing block |
+| baseline tolerance | `BASELINE_TOLERANCE`, run halts | pre-registered numeric criterion |
+| convergence | both readings computed and logged | window and per-iteration in every summary |
+| designation | **prose** | **nothing** |
+
+§6 was the one place a sentence stood in for a mechanism. The pattern is
+instructive: the clauses that got mechanised were the ones about what the agent
+must *not* do — read test labels, use a leaky encoding, trust a drifting
+feature. Prohibitions are natural to encode as guards. §6 was the only clause
+describing a *decision the harness must make*, and a decision is easier to write
+down than to implement, so it stayed prose while everything around it became
+code.
+
+**The generalisable claim: a pre-registration you cannot execute is a statement
+of intent, and it should be labelled as one.** We now classify every clause in
+POLICY.md as CODE or PROMISE (§12), which surfaced three further clauses that
+read stronger than they are — "test scored exactly once", "the test result
+cannot change the submission", and the diagnostic's exclusion from selection
+being true by construction rather than by assertion. None was a contradiction;
+all three are now stated as promises rather than implied to be mechanisms.
+
+### A null result here is the useful output
+
+The rule now executes, logs a `DESIGNATION_RECORD` naming both configs, both
+3-seed means, both measured stds, the band, whether they diverged, and which
+branch fired. If it reports **no divergence** — the best-valid config is also the
+structurally-justified one — that is not a wasted mechanism. It is the
+demonstration: the rule ran and the two criteria agreed, on the record, rather
+than us asserting they would have. And in the one case the rule genuinely cannot
+resolve, `record_intervention()` fires and the run reports a non-zero
+intervention count, which is the honest number rather than a flattering one.
