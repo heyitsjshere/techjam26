@@ -391,3 +391,35 @@ but a human who edits state mid-run is not detected. This is irreducible: the
 counter measures honesty, it cannot manufacture it. What the harness can do — and
 now does — is ensure the *agent loop itself* contains no unlogged human decision
 point.
+
+## 13. Iteration 0 is not a designation candidate
+
+Added after a dev run exposed the omission in §11's implementation.
+
+**Rule.** The designation candidate pool contains **experiment iterations only**.
+Iteration 0 reproduces the official baseline as a correctness precondition; it is
+not an attempt to improve on anything, and it is not eligible to be designated.
+This is the same principle §10 already applies to the stall counter — only
+iterations that ran an experiment are treated as evidence — extended to the
+decision that selects the submission.
+
+**What went wrong without it.** In a dev run where no experiment beat the
+baseline, best-valid resolved to iteration 0 (the FM baseline itself, 0.60141).
+The §6 within-band clause then compared it against a structural candidate at
+0.60086, found the gap of 0.00055 inside the 0.0008 band, and designated the
+**structural config — which scored below the baseline it exists to beat.** The
+rule was executing exactly as written and produced a submission worse than doing
+nothing.
+
+**Additional requirement.** If the designated config does not beat iteration 0's
+baseline, the designation record sets `beats_baseline: false` and the reason
+carries an explicit warning. A run that produced no improvement reports that
+plainly rather than presenting its best failure as a result.
+
+**If no experiment iteration produced a metric at all**, there is no candidate,
+`record_intervention()` fires, and nothing is designated.
+
+This is a second instance of the F8 lesson: the rule was written down correctly
+and implemented incompletely, and only executing it against real run data
+surfaced the gap. Unit tests written from the policy text would not have caught
+it, because the policy text did not mention iteration 0 either.

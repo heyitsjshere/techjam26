@@ -40,6 +40,9 @@ for n in (1, 2, 3):
         'std_mean': round(sum(stds)/len(stds), 5) if stds else None,
         'std_max': round(max(stds), 5) if stds else None,
         'best_curve': summary.get('best_curve'),
+        'designation_branch': next((r.get('branch') for r in recs
+                                    if r.get('kind_detail') == 'DESIGNATION_RECORD'), None),
+        'designation_reason': summary.get('designation_reason'),
         'repeats_rejected': summary.get('repeat_specs_rejected'),
         'distinct_specs': summary.get('distinct_specs_evaluated'),
         'run': n,
@@ -62,7 +65,7 @@ with open(os.path.join(ROOT, 'reports', 'dev_runs_summary.json'), 'w') as fh:
 print(f"\n\n{'='*118}\nDEV RUN SUMMARY\n{'='*118}")
 h = (f"{'run':>4} {'chunking':>9} {'@it':>4} {'listwise':>9} {'@it':>4} "
      f"{'final':>8} {'delta':>9} {'conv_win':>9} {'conv_iter':>10} {'seedstd':>8} "
-     f"{'used':>5} {'rpt':>4} {'spec':>5} {'interv':>7} {'tokens':>8} {'wall':>6}")
+     f"{'used':>5} {'rpt':>4} {'interv':>7} {'designation':>26} {'tokens':>8} {'wall':>6}")
 print(h); print('-' * len(h))
 for r in rows:
     if r.get('died'):
@@ -71,8 +74,9 @@ for r in rows:
           f"{str(r['listwise_found']):>9} {str(r['listwise_iter']):>4} "
           f"{r['final_primary']:>8.5f} {r['delta']:>+9.5f} {str(r['conv_window']):>9} "
           f"{str(r['conv_per_iter']):>10} {str(r['std_mean']):>8} "
-          f"{r['iters_used']:>5} {str(r['repeats_rejected']):>4} {str(r['distinct_specs']):>5} "
-          f"{r['interventions']:>7} {r['tokens']:>8,d} {r['wall_s']:>5}s")
+          f"{r['iters_used']:>5} {str(r['repeats_rejected']):>4} "
+          f"{r['interventions']:>7} {str(r['designation_branch']):>26} "
+          f"{r['tokens']:>8,d} {r['wall_s']:>5}s")
 ok = [r for r in rows if not r.get('died')]
 print(f"\nchunking found in {sum(r['chunking_found'] for r in ok)}/3   "
       f"listwise found in {sum(r['listwise_found'] for r in ok)}/3   "
@@ -82,3 +86,8 @@ print(f"spec cache fired in {sum(1 for r in ok if (r['repeats_rejected'] or 0) >
       f"({sum(r['repeats_rejected'] or 0 for r in ok)} repeat specs rejected total)")
 for r in ok:
     print(f"  run {r['run']} best-so-far curve: {r['best_curve']}")
+print()
+print("=== designation records ===")
+for r in ok:
+    print(f"  run {r['run']} [{r['designation_branch']}]")
+    print(f"    {r['designation_reason']}")

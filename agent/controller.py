@@ -147,6 +147,9 @@ class Controller:
                    'note': 'seeds best-so-far and the convergence window; does '
                            'not start the stall counter'})
         self.history.append({'iteration': 0, 'spec': spec, 'metrics': m,
+                             'primary': (m or {}).get('primary'),
+                             'primary_std': (m or {}).get('primary_std'),
+                             'cited_facts': [],
                              'note': 'baseline reproduction'})
         return ok
 
@@ -363,102 +366,121 @@ class Controller:
                    'distinct_specs_evaluated': len(self.evaluated)})
 
     def _designate(self):
-        """Execute the pre-registered designation rule. POLICY.md sections 6, 11.
+        """Execute the pre-registered designation rule. POLICY.md sections 6, 11, 13.
 
         This runs the rule; it does not describe it and leave it to a human.
         Every branch is logged, and the one case the rule cannot resolve calls
         record_intervention(), so a run that needed a human to choose reports a
         non-zero intervention count rather than a silent one.
+
+        Iteration 0 is NOT a designation candidate. It reproduces the baseline as
+        a correctness precondition -- the same reason it does not start the stall
+        counter (section 10). Allowing it into the candidate pool let a dev run
+        designate a config that scored BELOW the baseline: with no experiment
+        beating iteration 0, best-valid became the FM baseline itself and the
+        within-band rule then handed designation to a worse structural config.
         """
-        if not self.best:
+        baseline = next((h.get('primary') for h in self.history
+                         if h.get('iteration') == 0), None)
+
+        # Candidates are EXPERIMENTS only. Iteration 0 is excluded.
+        experiments = [h for h in self.history
+                       if h.get('iteration', 0) >= 1 and h.get('primary') is not None]
+
+        if not experiments:
             self.log.record_intervention(
-                'no successful iteration; no submission could be designated',
-                who='rule')
-            return None, 'no successful iteration'
+                'designation rule could not resolve: no experiment iteration '
+                'produced a metric, so there is no candidate submission at all. '
+                'A human must decide what, if anything, to submit.', who='rule')
+            return None, ('No experiment iteration produced a metric. Iteration 0 '
+                          'is a correctness precondition and is not a designation '
+                          'candidate, so there is nothing to designate. An '
+                          'intervention has been RECORDED.')
 
-        bv_primary, bv_spec, bv_iter = self.best
-        bv = next((h for h in self.history if h.get('iteration') == bv_iter), {})
+        bv = max(experiments, key=lambda h: h['primary'])
+        bv_primary, bv_iter, bv_spec = bv['primary'], bv['iteration'], bv['spec']
+        structural = [h for h in experiments
+                      if set(h.get('cited_facts') or []) & STRUCTURAL_FACTS]
 
-        # Candidates whose producing iteration cited a structural fact.
-        structural = [
-            h for h in self.history
-            if h.get('primary') is not None
-            and set(h.get('cited_facts') or []) & STRUCTURAL_FACTS]
-
-        def rec(branch, designated_spec, reason, st=None):
+        def rec(branch, spec, primary, reason, st=None):
+            beats = baseline is None or primary > baseline
+            if not beats:
+                reason += (f' WARNING: the designated config ({primary:.5f}) does '
+                           f'NOT beat the iteration-0 baseline ({baseline:.5f}). '
+                           f'This run produced no improvement and the submission '
+                           f'is reported as such.')
             self.log.iteration(
                 i=-1, tier='A',
                 hypothesis='DESIGNATION: apply the pre-registered rule '
-                           '(POLICY.md sections 6 and 11)',
+                           '(POLICY.md sections 6, 11, 13)',
                 rationale=reason, expected_gain=0.0,
                 expected_gain_derivation='Not an experiment; the designation rule.',
-                spec=designated_spec, drift=None, metrics=None, diagnostic=None,
+                spec=spec, drift=None, metrics=None, diagnostic=None,
                 accepted=True, best_so_far=bv_primary, stall_count=self.stall,
                 seconds=0,
                 extra={'kind_detail': 'DESIGNATION_RECORD', 'branch': branch,
                        'band': DESIGNATION_BAND,
                        'structural_fact_keys': sorted(STRUCTURAL_FACTS),
-                       'best_valid': {
-                           'iteration': bv_iter, 'primary': bv_primary,
-                           'primary_std': bv.get('primary_std'),
-                           'cited_facts': bv.get('cited_facts')},
+                       'baseline_primary': baseline,
+                       'designated_primary': primary,
+                       'beats_baseline': beats,
+                       'candidate_pool_excludes_iteration_0': True,
+                       'best_valid': {'iteration': bv_iter, 'primary': bv_primary,
+                                      'primary_std': bv.get('primary_std'),
+                                      'cited_facts': bv.get('cited_facts')},
                        'structural': None if st is None else {
-                           'iteration': st.get('iteration'),
-                           'primary': st.get('primary'),
+                           'iteration': st.get('iteration'), 'primary': st.get('primary'),
                            'primary_std': st.get('primary_std'),
                            'cited_facts': st.get('cited_facts')},
                        'ran_experiment': False,
                        'counted_toward_convergence': False})
-            return designated_spec, reason
+            return spec, reason
 
         if not structural:
-            # The rule cannot resolve this. Do not let a human decide silently.
             self.log.record_intervention(
-                'designation rule could not resolve: no iteration cited a '
-                'structural fact key, so no structurally-justified candidate '
-                'exists to compare against best-valid. A human must choose.',
-                who='rule')
-            return rec(
-                'NO_STRUCTURAL_CANDIDATE', bv_spec,
-                f'No iteration cited any of {sorted(STRUCTURAL_FACTS)}, so the '
-                f'§6 comparison could not be made. Falling back to best-valid: '
-                f'iteration {bv_iter}, 3-seed mean {bv_primary:.5f} '
-                f'(std {bv.get("primary_std")}). An intervention has been '
-                f'RECORDED because this decision was not resolved by the rule.')
+                'designation rule could not resolve: no experiment iteration '
+                'cited a structural fact key, so no structurally-justified '
+                'candidate exists to compare against best-valid. A human must '
+                'choose.', who='rule')
+            return rec('NO_STRUCTURAL_CANDIDATE', bv_spec, bv_primary,
+                       f'No experiment cited any of {sorted(STRUCTURAL_FACTS)}, so '
+                       f'the §6 comparison could not be made. Falling back to '
+                       f'best-valid: iteration {bv_iter}, 3-seed mean '
+                       f'{bv_primary:.5f} (std {bv.get("primary_std")}). An '
+                       f'intervention has been RECORDED because this decision was '
+                       f'not resolved by the rule.')
 
         st = max(structural, key=lambda h: h['primary'])
         gap = bv_primary - st['primary']
-        std_note = (f'best-valid std {bv.get("primary_std")}, '
-                    f'structural std {st.get("primary_std")}, '
-                    f'band {DESIGNATION_BAND} (published 5-seed std)')
+        std_note = (f'best-valid std {bv.get("primary_std")}, structural std '
+                    f'{st.get("primary_std")}, band {DESIGNATION_BAND} '
+                    f'(published 5-seed std)')
 
-        if st.get('iteration') == bv_iter:
-            return rec(
-                'NO_DIVERGENCE', bv_spec,
-                f'No divergence: the best-valid config IS the '
-                f'structurally-justified one (iteration {bv_iter}, 3-seed mean '
-                f'{bv_primary:.5f}, cited {st.get("cited_facts")}). The rule was '
-                f'executed and the two criteria agreed. {std_note}.', st)
+        if st['iteration'] == bv_iter:
+            return rec('NO_DIVERGENCE', bv_spec, bv_primary,
+                       f'No divergence: the best-valid config IS the '
+                       f'structurally-justified one (iteration {bv_iter}, 3-seed '
+                       f'mean {bv_primary:.5f}, cited {st.get("cited_facts")}). The '
+                       f'rule was executed and the two criteria agreed. {std_note}.',
+                       st)
 
         if gap <= DESIGNATION_BAND + DESIGNATION_BAND_TOL:
-            return rec(
-                'STRUCTURAL_WITHIN_BAND', st['spec'],
-                f'DIVERGED, structural designated. Best-valid: iteration '
-                f'{bv_iter}, 3-seed mean {bv_primary:.5f}. Structural: iteration '
-                f'{st["iteration"]}, 3-seed mean {st["primary"]:.5f}, cited '
-                f'{st.get("cited_facts")}. Gap {gap:.5f} is within the band, so '
-                f'§6 designates the structurally-justified config: 79 '
-                f'valid-selected experiments carry selection risk that a '
-                f'structural fix does not. {std_note}.', st)
+            return rec('STRUCTURAL_WITHIN_BAND', st['spec'], st['primary'],
+                       f'DIVERGED, structural designated. Best-valid: iteration '
+                       f'{bv_iter}, 3-seed mean {bv_primary:.5f}. Structural: '
+                       f'iteration {st["iteration"]}, 3-seed mean {st["primary"]:.5f}, '
+                       f'cited {st.get("cited_facts")}. Gap {gap:.5f} is within the '
+                       f'band, so §6 designates the structurally-justified config: '
+                       f'79 valid-selected experiments carry selection risk that a '
+                       f'structural fix does not. {std_note}.', st)
 
-        return rec(
-            'BEST_VALID_BEYOND_BAND', bv_spec,
-            f'DIVERGED beyond the band, best-valid designated. Best-valid: '
-            f'iteration {bv_iter}, 3-seed mean {bv_primary:.5f}. Best structural: '
-            f'iteration {st["iteration"]}, 3-seed mean {st["primary"]:.5f}, cited '
-            f'{st.get("cited_facts")}. Gap {gap:.5f} exceeds the band, so §6 as '
-            f'clarified in §11 designates best-valid and logs the divergence. '
-            f'{std_note}.', st)
+        return rec('BEST_VALID_BEYOND_BAND', bv_spec, bv_primary,
+                   f'DIVERGED beyond the band, best-valid designated. Best-valid: '
+                   f'iteration {bv_iter}, 3-seed mean {bv_primary:.5f}. Best '
+                   f'structural: iteration {st["iteration"]}, 3-seed mean '
+                   f'{st["primary"]:.5f}, cited {st.get("cited_facts")}. Gap '
+                   f'{gap:.5f} exceeds the band, so §6 as clarified in §11 '
+                   f'designates best-valid and logs the divergence. {std_note}.', st)
 
     @staticmethod
     def _key(spec):

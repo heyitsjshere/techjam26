@@ -105,6 +105,44 @@ h = Harness(best=(0.6030, {'tag': 'BV'}, 3),
 spec, _ = h.designate()
 check('gap == band -> structural (<=, not <)', spec['tag'] == 'ST', str(spec))
 
+print("\n=== iteration 0 is NOT a designation candidate (regression) ===")
+# The dev-run bug: no experiment beat the baseline, so best-valid became the FM
+# baseline at iteration 0, and the within-band rule then designated a structural
+# config that scored BELOW it.
+h = Harness(best=(0.60141, {'tag': 'BASELINE'}, 0),
+            history=[{'iteration': 0, 'primary': 0.60141, 'primary_std': 0.0002,
+                      'cited_facts': [], 'spec': {'tag': 'BASELINE'},
+                      'note': 'baseline reproduction'},
+                     it(1, 0.60086, ['GROUP_SHAPE_MISMATCH'], tag='ST')])
+spec, reason = h.designate()
+d = h.designation()
+check('never designates the iteration-0 baseline', spec['tag'] != 'BASELINE', str(spec))
+check('designates the only experiment instead', spec['tag'] == 'ST', str(spec))
+check('record marks iteration 0 excluded', d and d['candidate_pool_excludes_iteration_0'])
+check('flags that it does not beat the baseline', d and d['beats_baseline'] is False)
+check('reason carries the explicit warning', 'does\n' not in reason and 'WARNING' in reason,
+      reason[-120:])
+
+print("\n=== a designated config that DOES beat the baseline is not flagged ===")
+h = Harness(best=(0.6030, {'tag': 'A'}, 1),
+            history=[{'iteration': 0, 'primary': 0.60141, 'primary_std': 0.0002,
+                      'cited_facts': [], 'spec': {'tag': 'BASELINE'}},
+                     it(1, 0.6030, ['GROUP_SHAPE_MISMATCH'], tag='A')])
+spec, reason = h.designate()
+d = h.designation()
+check('beats_baseline is True', d and d['beats_baseline'] is True)
+check('no warning in the reason', 'WARNING' not in reason)
+
+print("\n=== no experiment produced a metric -> intervention ===")
+h = Harness(best=(0.60141, {'tag': 'BASELINE'}, 0),
+            history=[{'iteration': 0, 'primary': 0.60141, 'primary_std': 0.0002,
+                      'cited_facts': [], 'spec': {'tag': 'BASELINE'}}])
+spec, reason = h.designate()
+check('designates nothing', spec is None, str(spec))
+check('intervention recorded', len(h.interventions()) == 1)
+check('reason explains iteration 0 is not a candidate',
+      'not a designation' in reason or 'not a candidate' in reason, reason[:120])
+
 print("\n=== every branch emits a designation record ===")
 check('all four resolvable branches logged a DESIGNATION_RECORD', True)
 
