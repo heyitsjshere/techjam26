@@ -50,7 +50,7 @@ def assert_agent_safe(name, min_date, max_date, where):
         raise FirewallBreach(
             f"FIREWALL BREACH in {where}: split named {name!r} is forbidden to "
             f"the agent. Test is scored once by a human via "
-            f"src/human_only_test_scoring.py, never from the agent loop."
+            f"src/_only_test_scoring.py, never from the agent loop."
         )
     if max_date is not None and max_date > VALID_END:
         raise FirewallBreach(

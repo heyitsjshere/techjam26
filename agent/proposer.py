@@ -180,8 +180,18 @@ class AnthropicBackend:
                 'Export it in the shell that launches the run, then retry.')
         self.model, self.max_tokens, self.effort = model, max_tokens, effort
         self._anthropic = anthropic
+        # An identity-linked API key must name the workspace it acts in. The
+        # workspace id is an identifier, not a credential, but it is read from
+        # the environment alongside the key so neither is ever written to a file
+        # by this code.
+        headers = {}
+        ws = os.environ.get('ANTHROPIC_WORKSPACE_ID')
+        if ws:
+            headers['anthropic-workspace-id'] = ws
+        self.workspace_id = ws
         # SDK retries disabled so ours are the only ones and all are logged.
-        self.client = anthropic.Anthropic(max_retries=0)
+        self.client = anthropic.Anthropic(max_retries=0,
+                                          default_headers=headers or None)
 
     def complete(self, system, user):
         A = self._anthropic
@@ -208,6 +218,13 @@ class AnthropicBackend:
                 recovery.append({'attempt': attempt, 'error': type(e).__name__,
                                  'status': getattr(e, 'status_code', None),
                                  'retryable': False, 'action': 'aborting proposal'})
+                if 'anthropic-workspace-id' in str(e) and not self.workspace_id:
+                    raise ProposerError(
+                        'This API key is identity-linked and must name the '
+                        'workspace it acts in, but ANTHROPIC_WORKSPACE_ID is not '
+                        'set. Find the id in the Console (Settings -> Workspaces; '
+                        'it looks like wrkspc_...) and export it alongside the '
+                        'key, then retry.') from e
                 raise ProposerError(f'{type(e).__name__}: {e}') from e
             except (A.RateLimitError, A.APIStatusError, A.APIConnectionError) as e:
                 status = getattr(e, 'status_code', None)
