@@ -1,0 +1,47 @@
+[
+ {
+  "run": 1,
+  "chunking_found": true,
+  "chunking_iter": 1,
+  "listwise_found": false,
+  "listwise_iter": null,
+  "final_primary": 0.60163,
+  "delta": 3e-05,
+  "iters_at_convergence": 3,
+  "iters_used": 4,
+  "interventions": 0,
+  "tokens": 41501,
+  "wall_s": 350,
+  "reason": "validation primary did not improve by more than 0.002 over 3 consecutive iterations"
+ },
+ {
+  "run": 2,
+  "chunking_found": true,
+  "chunking_iter": 1,
+  "listwise_found": true,
+  "listwise_iter": 3,
+  "final_primary": 0.60229,
+  "delta": 0.00069,
+  "iters_at_convergence": 3,
+  "iters_used": 4,
+  "interventions": 0,
+  "tokens": 43146,
+  "wall_s": 329,
+  "reason": "validation primary did not improve by more than 0.002 over 3 consecutive iterations"
+ },
+ {
+  "run": 3,
+  "chunking_found": true,
+  "chunking_iter": 1,
+  "listwise_found": true,
+  "listwise_iter": 3,
+  "final_primary": 0.60188,
+  "delta": 0.00028,
+  "iters_at_convergence": 3,
+  "iters_used": 4,
+  "interventions": 0,
+  "tokens": 42818,
+  "wall_s": 305,
+  "reason": "validation primary did not improve by more than 0.002 over 3 consecutive iterations"
+ }
+]
