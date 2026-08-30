@@ -67,13 +67,35 @@ def agent_mode():
         _state.agent = prev
 
 
-def check_encoding(mode):
+# Two distinct situations, which must not be conflated:
+#   'oof'   -- encoding TRAIN rows against the train window. Self-inclusion is
+#              possible here, so out-of-fold is the only permitted scheme.
+#   'apply' -- applying a train-fitted statistic to VALID (or diagnostic) rows.
+#              Those rows are in a disjoint later time window and contributed
+#              nothing to the statistic, so there is no own-row to exclude and no
+#              correction is applicable. This is the ordinary causal join.
+# Banned on the train path: 'naive' (row sees its own outcome) and 'loo'
+# (substitutes a label-dependent offset the tree learns to invert, measured at
+# -0.0137 in Phase 1).
+TRAIN_PATH_ALLOWED = ('oof',)
+EVAL_PATH_ALLOWED = ('apply',)
+
+
+def check_encoding(mode, is_train_path=True):
     """Called from inside the encoder on every encode. Guard 1."""
-    if in_agent_mode() and mode != 'oof':
+    if not in_agent_mode():
+        return mode
+    allowed = TRAIN_PATH_ALLOWED if is_train_path else EVAL_PATH_ALLOWED
+    if mode not in allowed:
+        where = 'train rows' if is_train_path else 'eval rows'
         raise GuardViolation(
-            f"encoding={mode!r} is unreachable in agent mode. Phase 1 measured "
-            f"leave-one-out at -0.0137 vs naive (label-dependent offset the tree "
-            f"inverts) and naive leaks the row's own outcome. Out-of-fold only."
+            f"encoding={mode!r} is unreachable in agent mode on {where}; "
+            f"permitted: {allowed}. On train rows only out-of-fold is allowed "
+            f"-- naive lets a row see its own outcome, and leave-one-out "
+            f"substitutes a label-dependent offset the tree inverts (measured "
+            f"at -0.0137). On eval rows the statistic is applied unmodified, "
+            f"because those rows are in a disjoint later window and contributed "
+            f"nothing to it."
         )
     return mode
 

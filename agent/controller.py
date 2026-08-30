@@ -129,15 +129,14 @@ class Controller:
                     api_recovery=list(getattr(self.backend, 'last_recovery', [])),
                     drift=None, metrics=None, diagnostic=None, accepted=False,
                     best_so_far=self.best[0] if self.best else None,
-                    stall_count=self.stall, seconds=0)
+                    stall_count=self.stall, seconds=0,
+                    extra={'ran_experiment': False,
+                           'counted_toward_convergence': False})
                 i += 1
                 continue
 
             ranked = self._rank(cands)
-            done = self._execute_first_viable(ranked, i, usage, api_recovery, forced)
-            if done is None:
-                i += 1
-                continue
+            self._execute_first_viable(ranked, i, usage, api_recovery, forced)
             if self._converged():
                 return self._finish(
                     f'validation primary did not improve by more than {EPS} '
@@ -194,17 +193,24 @@ class Controller:
     def _log_iter(self, i, c, res, err, rec, usage, api_recovery, forced):
         m = (res or {}).get('metrics')
         rejected = (res or {}).get('rejected_by')
-        improved = bool(m) and (self.best is None or m['primary'] > self.best[0])
+        prev_best = self.best[0] if self.best else None
+
+        # An iteration is evidence about saturation only if an experiment
+        # actually ran. A drift rejection counts -- the agent spent the
+        # iteration on a hypothesis that yielded nothing. A proposal failure or
+        # an empty slate does NOT: no experiment ran, so it says nothing about
+        # whether the metric has stopped moving, and letting it trip the
+        # convergence rule would end the run on an infrastructure problem.
+        ran_experiment = (m is not None) or (rejected == 'drift_check')
+
+        improved = m is not None and (prev_best is None or m['primary'] > prev_best)
         if improved:
             self.best = (m['primary'], c['spec'], i)
-        # stall accounting: improvement means a gain of more than EPS over best-so-far
-        gained = bool(m) and (self.best is None or
-                              m['primary'] > (self.best[0] if not improved else m['primary']) - 1e-12)
-        prev_best = self.best[0] if self.best else 0.0
-        if m and improved and (m['primary'] - (self.history_best_before() or 0)) > EPS:
-            self.stall = 0
-        else:
-            self.stall += 1
+        if ran_experiment:
+            gained_enough = (m is not None and
+                             (prev_best is None or m['primary'] > prev_best + EPS))
+            self.stall = 0 if gained_enough else self.stall + 1
+
         self.log.iteration(
             i=i, tier=c.get('tier', 'A'), hypothesis=c.get('hypothesis'),
             rationale=c.get('rationale'), expected_gain=c.get('expected_gain'),
@@ -223,7 +229,8 @@ class Controller:
                    'cited_facts': c.get('cited_facts'),
                    'expected_gain_effective': c.get('_effective_gain'),
                    'uncited_discount_applied': c.get('_uncited'),
-                   'slate_size': None})
+                   'ran_experiment': ran_experiment,
+                   'counted_toward_convergence': ran_experiment})
         self.history.append({
             'iteration': i, 'hypothesis': c.get('hypothesis'), 'spec': c.get('spec'),
             'expected_gain': c.get('expected_gain'),

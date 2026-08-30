@@ -25,6 +25,26 @@ except guards.GuardViolation:
     check('naive raises in agent mode', True)
 with guards.agent_mode():
     check('oof works in agent mode', store.build(S['train'], ('item_agg',), encoding='oof').shape[0] == len(S['train']))
+    # Regression: the guard must NOT fire on the eval path. Applying a
+    # train-fitted statistic to valid rows is the ordinary causal join -- those
+    # rows are in a disjoint later window and contributed nothing to it, so
+    # there is no own-row to exclude. Caught by the first full-loop plumbing run.
+    try:
+        n = store.build(S['valid'], ('item_agg', 'user_agg')).shape[0]
+        check('eval path is NOT blocked by Guard 1', n == len(S['valid']))
+    except guards.GuardViolation as e:
+        check('eval path is NOT blocked by Guard 1', False, f'guard over-fired: {e}')
+    # Stronger than "eval rejects a bad mode": build() forces 'apply' on the
+    # eval path, so the encoding argument is inert there and a caller cannot
+    # select a leaky scheme for eval rows at all.
+    import numpy as _np
+    a = store.build(S['valid'], ('item_agg',), encoding='oof')
+    b = store.build(S['valid'], ('item_agg',), encoding='naive')
+    c = store.build(S['valid'], ('item_agg',), encoding='loo')
+    check('eval path ignores the encoding argument entirely',
+          _np.array_equal(a.to_numpy(), b.to_numpy()) and
+          _np.array_equal(a.to_numpy(), c.to_numpy()),
+          'eval output depended on the encoding argument')
 check('spec schema has no encoding field',
       bool(__import__('actionspace').validate(
           {'model':'lightgbm','objective':'binary','group_chunk':None,

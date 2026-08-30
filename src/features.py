@@ -71,11 +71,13 @@ class _Encoder:
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
             os.path.abspath(__file__))), 'agent'))
         import guards
-        guards.check_encoding(mode)
+        guards.check_encoding(mode, is_train_path=(own is not None))
         pos = self.tot_pos.reindex(keys).fillna(0.0).to_numpy(np.float64)
         cnt = self.tot_cnt.reindex(keys).fillna(0.0).to_numpy(np.float64)
-        if mode == 'naive' or own is None:
-            pass
+        if own is None or mode == 'apply':
+            pass          # eval path: statistic applied unmodified
+        elif mode == 'naive':
+            pass          # train path, leaky; reachable only outside agent mode
         elif mode == 'loo':
             pos = pos - own
             cnt = cnt - 1.0
@@ -232,7 +234,7 @@ class FeatureStore:
         if 'item_agg' in blocks:
             o_lv = self._train_lv if loo else None
             o_ck = self._train_ck if loo else None
-            m = encoding if loo else 'naive'
+            m = encoding if loo else 'apply'
             out['v_lv_rate'], vc = self.enc_v_lv.encode(vid, P, self.g_lv, m, o_lv)
             out['v_click_rate'], _ = self.enc_v_ck.encode(vid, P, self.g_click, m, o_ck)
             out['a_lv_rate'], _ = self.enc_a_lv.encode(aid, P, self.g_lv, m, o_lv)
@@ -290,7 +292,7 @@ class FeatureStore:
             o_lv = self._train_lv if loo else None
             o_ck = self._train_ck if loo else None
             o_lk = self._train_lk if loo else None
-            m = encoding if loo else 'naive'
+            m = encoding if loo else 'apply'
             out['u_lv_rate'], _ = self.enc_u_lv.encode(uid, P, self.g_lv, m, o_lv)
             out['u_click_rate'], _ = self.enc_u_ck.encode(uid, P, self.g_click, m, o_ck)
             out['u_like_rate'], _ = self.enc_u_lk.encode(uid, P, self.g_like, m, o_lk)
