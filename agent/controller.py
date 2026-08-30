@@ -48,6 +48,13 @@ WALL_CLOCK_LIMIT_S = 6 * 3600
 UNCITED_DISCOUNT = 0.5
 MAX_RESLATES = 2          # bounded, so a stubborn proposer cannot spin forever
 
+# An API failure must not kill the run -- but neither should it let the run spin
+# through the whole iteration cap doing nothing. A dev run exhausted its credit
+# balance and burned all 50 iterations in 54 seconds on consecutive 400s,
+# reporting a converged run that had never proposed anything. After this many
+# CONSECUTIVE proposal failures the run finishes with an explicit reason.
+MAX_CONSECUTIVE_PROPOSAL_FAILURES = 3
+
 # POLICY.md section 6: nothing single-seed is ever designated. Selection,
 # convergence and designation all run on the 3-seed mean. Seed std is 0.0008 and
 # real deltas here are the same order, so a single seed cannot separate signal
@@ -159,6 +166,7 @@ class Controller:
             return self._finish('baseline reproduction failed', None)
         i = 1
         reslates = 0
+        proposal_failures = 0
         while i < self.max_iters:
             if time.time() - self.t0 > WALL_CLOCK_LIMIT_S:
                 return self._finish('wall-clock backstop reached', i)
@@ -179,10 +187,18 @@ class Controller:
                     best_so_far=self.best[0] if self.best else None,
                     stall_count=self.stall, seconds=0,
                     extra={'ran_experiment': False,
-                           'counted_toward_convergence': False})
+                           'counted_toward_convergence': False,
+                           'consecutive_proposal_failures': proposal_failures + 1})
+                proposal_failures += 1
+                if proposal_failures >= MAX_CONSECUTIVE_PROPOSAL_FAILURES:
+                    return self._finish(
+                        f'aborted after {proposal_failures} consecutive proposal '
+                        f'failures; the proposer could not be reached, so no '
+                        f'further experiment was possible. Last error: {e}', i)
                 i += 1
                 continue
 
+            proposal_failures = 0          # a successful slate resets the counter
             outcome = self._execute_first_viable(
                 self._rank(cands), i, usage, api_recovery, forced)
             if outcome == 'all_repeats' and reslates < MAX_RESLATES:

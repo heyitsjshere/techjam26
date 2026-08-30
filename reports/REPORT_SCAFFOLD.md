@@ -331,3 +331,52 @@ demonstration: the rule ran and the two criteria agreed, on the record, rather
 than us asserting they would have. And in the one case the rule genuinely cannot
 resolve, `record_intervention()` fires and the run reports a non-zero
 intervention count, which is the honest number rather than a flattering one.
+
+## F8 addendum — the same lesson, twice more, in one sitting
+
+After §6 was made executable, two further defects surfaced **only by running the
+rule against real data**. Both are the F8 lesson repeating: correct prose,
+incomplete mechanism.
+
+**1. Iteration 0 was eligible to be designated.** In a run where no experiment
+beat the baseline, best-valid resolved to iteration 0 — the FM baseline itself —
+and the within-band clause then designated a structural config scoring *below*
+it. The rule executed exactly as written and produced a submission worse than
+doing nothing. Unit tests written from the policy text could not have caught
+this, because the policy text did not mention iteration 0 either. Fixed
+(POLICY.md §13); the candidate pool is now experiments only, and a designated
+config that fails to beat the baseline sets `beats_baseline: false` and carries
+an explicit warning.
+
+**2. A persistent proposal failure burned the whole iteration cap.** The API
+credit balance was exhausted mid-round. The backend behaved correctly — the 400
+was classified non-retryable on the first attempt, no backoff was wasted, the
+error was logged as a recovery event, and the run did not crash. But "an API
+failure never kills the run" turned out to mean "the run spins through all 50
+iterations in 54 seconds proposing nothing" and then reports itself converged.
+Graceful degradation that produces a confident, empty result is its own failure
+mode. The run now aborts after 3 consecutive proposal failures with an explicit
+reason naming the last error.
+
+## F9 — The clearest single illustration of the eps-versus-headroom problem.
+
+One dev run produced **three consecutive genuine improvements**:
+
+```
+0.60141  ->  0.60178  ->  0.60209  ->  0.60338
+```
+
+Every step is real, measured on 3-seed means with std 0.00021–0.00031. Total
+accumulated improvement across the window: **+0.00197**.
+
+The window threshold is **0.002**. The run converged and stopped.
+
+It missed staying alive by **0.00003** — roughly one tenth of its own seed
+standard deviation. An agent that improved its score on every single iteration,
+monotonically, with no wasted move, was terminated by the stopping rule for
+insufficient progress.
+
+This is F7 stated as sharply as the data allows. The rule is not distinguishing
+a saturated agent from a productive one; at this benchmark's headroom scale it
+cannot, because the entire attainable range is roughly the size of the threshold
+that decides whether you are still making progress.

@@ -1,0 +1,83 @@
+[
+ {
+  "conv_window": 3,
+  "conv_per_iter": 3,
+  "std_mean": 0.00021,
+  "std_max": 0.00031,
+  "best_curve": [
+   0.60141,
+   0.60178,
+   0.60209,
+   0.60338
+  ],
+  "designation_branch": "NO_DIVERGENCE",
+  "designation_reason": "No divergence: the best-valid config IS the structurally-justified one (iteration 3, 3-seed mean 0.60338, cited ['USER_CONSTANT_NO_EFFECT', 'SHORT_EVAL_LISTS', 'ORGANIZER_UNEXPLORED', 'CEILING', 'CONVERGENCE_MECHANICS', 'SEED_NOISE']). The rule was executed and the two criteria agreed. best-valid std 0.00031, structural std 0.00031, band 0.0008 (published 5-seed std).",
+  "repeats_rejected": 0,
+  "distinct_specs": 3,
+  "run": 1,
+  "chunking_found": true,
+  "chunking_iter": 1,
+  "listwise_found": true,
+  "listwise_iter": 3,
+  "final_primary": 0.60338,
+  "delta": 0.00178,
+  "iters_at_convergence": 3,
+  "iters_used": 4,
+  "interventions": 0,
+  "tokens": 52990,
+  "wall_s": 500,
+  "reason": "window reading: best-so-far improved by no more than 0.002 across the last 3 counting iterations"
+ },
+ {
+  "conv_window": 50,
+  "conv_per_iter": null,
+  "std_mean": 4e-05,
+  "std_max": 4e-05,
+  "best_curve": [
+   0.60141
+  ],
+  "designation_branch": null,
+  "designation_reason": "No experiment iteration produced a metric. Iteration 0 is a correctness precondition and is not a designation candidate, so there is nothing to designate. An intervention has been RECORDED.",
+  "repeats_rejected": 0,
+  "distinct_specs": 0,
+  "run": 2,
+  "chunking_found": false,
+  "chunking_iter": null,
+  "listwise_found": false,
+  "listwise_iter": null,
+  "final_primary": 0.60141,
+  "delta": -0.00019,
+  "iters_at_convergence": 50,
+  "iters_used": 50,
+  "interventions": 1,
+  "tokens": 0,
+  "wall_s": 58,
+  "reason": "iteration cap 50 reached"
+ },
+ {
+  "conv_window": 50,
+  "conv_per_iter": null,
+  "std_mean": 4e-05,
+  "std_max": 4e-05,
+  "best_curve": [
+   0.60141
+  ],
+  "designation_branch": null,
+  "designation_reason": "No experiment iteration produced a metric. Iteration 0 is a correctness precondition and is not a designation candidate, so there is nothing to designate. An intervention has been RECORDED.",
+  "repeats_rejected": 0,
+  "distinct_specs": 0,
+  "run": 3,
+  "chunking_found": false,
+  "chunking_iter": null,
+  "listwise_found": false,
+  "listwise_iter": null,
+  "final_primary": 0.60141,
+  "delta": -0.00019,
+  "iters_at_convergence": 50,
+  "iters_used": 50,
+  "interventions": 1,
+  "tokens": 0,
+  "wall_s": 54,
+  "reason": "iteration cap 50 reached"
+ }
+]
