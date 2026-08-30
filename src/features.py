@@ -65,6 +65,13 @@ class _Encoder:
                          for k in range(n_folds)]
 
     def encode(self, keys, prior, gmean, mode, own=None):
+        # Guard 1: in agent mode only out-of-fold is reachable. Enforced here,
+        # inside the encoder, so agent-written Tier B code cannot route around it.
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'agent'))
+        import guards
+        guards.check_encoding(mode)
         pos = self.tot_pos.reindex(keys).fillna(0.0).to_numpy(np.float64)
         cnt = self.tot_cnt.reindex(keys).fillna(0.0).to_numpy(np.float64)
         if mode == 'naive' or own is None:
