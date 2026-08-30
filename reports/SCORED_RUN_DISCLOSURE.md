@@ -50,4 +50,37 @@ luck: each time, the mechanism did exactly what it was specified to do, and the
 specification did not cover the case that actually occurred. Each was found only
 by running the real system, never by tests written from the specification.
 
-## Attempt 02 — see the results table
+## Attempt 02 — DISCARDED (technical failure, introduced by the attempt-01 fix)
+
+- **Log:** `reports/runlog_scored_final_DISCARDED_02.jsonl` (retained)
+- **Reached:** iteration 0 reproduced the baseline at 0.60141. Iterations 1-3 all
+  failed at the proposal step. The run then **stopped cleanly** via the liveness
+  condition after 3 consecutive unproductive iterations.
+- **Error:** `Streaming is required for operations that may take longer than 10
+  minutes.`
+
+### Cause
+
+Fix (2) for attempt 01 raised `max_tokens` from 16000 to 24000. That crossed the
+SDK's ceiling for **non-streaming** requests, so every proposal was rejected
+before it was sent. The fix for one failure introduced another.
+
+### What went right
+
+The liveness condition added after the credit-exhaustion incident worked exactly
+as designed: instead of spinning through all 50 iterations and reporting a
+converged run, the run **aborted after 3 consecutive unproductive iterations and
+named the underlying error**. Attempt 02 is the first failure in this build that
+was caught by a guard written in response to an earlier failure, rather than by
+a human reading the logs afterwards.
+
+### Fix applied before relaunch
+
+Switched from `client.messages.parse()` to `client.messages.stream()` with
+`output_format`, which lifts the 10-minute ceiling while keeping the slate
+schema-validated. Verified with a live call: 98s, 8,189 input / **7,871 output**
+tokens — confirming that adaptive thinking plus the briefing genuinely needs
+more than the original 16000 budget, which is what caused attempt 01's
+incomplete response in the first place.
+
+## Attempt 03 — see the results table

@@ -227,14 +227,20 @@ class AnthropicBackend:
         self.last_recovery = recovery
         for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                r = self.client.messages.parse(
+                # Streaming, not messages.parse(): adaptive thinking plus a
+                # large briefing can push a request past the SDK's 10-minute
+                # non-streaming ceiling, which killed a scored run at
+                # max_tokens=24000. Streaming lifts that ceiling and still
+                # supports output_format, so the slate stays schema-validated.
+                with self.client.messages.stream(
                     model=self.model, max_tokens=self.max_tokens,
                     system=system,
                     messages=[{'role': 'user', 'content': user}],
                     thinking={'type': 'adaptive'},
                     output_config={'effort': self.effort},
                     output_format=Slate,
-                )
+                ) as stream:
+                    r = stream.get_final_message()
                 stop = getattr(r, 'stop_reason', None)
                 if stop == 'refusal':
                     raise ProposerError(
