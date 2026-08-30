@@ -50,6 +50,21 @@ guessed:
 | `dur_rank_in_list` | 0.268 | **covariate shift, not leakage** |
 | `cross_agg` (naive) | **0.769** | known leak from Phase 1 |
 
+> **Limitation — read this before trusting a drift pass.** The drift check is a
+> **backstop, not the primary defence.** The primary defence is out-of-fold
+> encoding enforced at the code level (Guard 1), which makes leakage structurally
+> impossible for aggregate features. The drift check covers only what Guard 1
+> does not mediate: a new feature family that leaks by some other route.
+>
+> Its calibration band is narrow — 0.049–0.268 legitimate, 0.769 for the one
+> known leak, and **exactly one known-positive point**. Rejecting at 0.40
+> catches gross leakage of the magnitude Phase 1 produced, but **would miss a
+> subtle leak around 0.35**, and would almost certainly miss one below 0.27,
+> which is inside the legitimate range. It also cannot distinguish leakage from
+> covariate shift — `dur_rank_in_list` at 0.268 is the latter. A drift pass is
+> not evidence a feature is sound; it means no gross leak was detected by a
+> single-statistic test with one calibration point.
+
 Reject at **0.40** — 1.5× above the highest legitimate block, 1.9× below the
 known leak. A **warn band at 0.25** exists because calibration surfaced a real
 distinction: `dur_rank_in_list` is a duration percentile *within a user's list*,
@@ -164,8 +179,36 @@ kit's `data.load()`, which reads the test window.
   loop continues.
 - Best-so-far checkpoint is what gets designated, never the last iteration.
 
-## Open item
+## Proposer backend
 
-The proposer backend is pluggable (`AnthropicBackend`, plus a `StubBackend` for
-plumbing tests that the controller **refuses in a scored run**). Which backend
-the scored run uses is unresolved — see the review note.
+**Anthropic Messages API**, model **`claude-opus-5`**, adaptive thinking,
+effort `high`, `max_tokens` 16000. The exact model string is written into every
+iteration record (`proposer_model`) and into the run summary, since Devpost
+requires an APIs-used field.
+
+- **Key handling.** Read from `os.environ['ANTHROPIC_API_KEY']` only. Never
+  hardcoded, never logged, never written to a file, never passed as an argument,
+  never read back or printed. Absent ⇒ immediate failure with an actionable
+  message, before any request is made. `.env` and `.env.*` are gitignored.
+- **Structured output.** The slate is produced through `client.messages.parse()`
+  against a Pydantic schema, so a malformed proposal is impossible by
+  construction rather than caught by a parser. An unattended scored run cannot
+  afford to lose iterations to JSON formatting.
+- **Retry.** SDK retries are **disabled** (`max_retries=0`) so ours are the only
+  ones and every attempt is visible. Up to 3 attempts, exponential backoff from
+  2s with jitter, honouring `retry-after` on 429. Retryable: 429, 5xx/529, and
+  connection errors. **Not** retryable: 400/401/403/404 — bugs or config
+  problems that will not fix themselves. After 3 attempts the controller logs
+  the failure and requests a fresh slate next iteration; **an API failure never
+  kills the run**. Every attempt is written to `api_recovery` in the iteration
+  record.
+- **Refusal.** `stop_reason == "refusal"` is treated as a proposal failure and
+  routed through the same path. Server-side fallbacks are **not** enabled — it
+  would add a beta-header failure mode to an unattended run for a case
+  (a refusal on an ML experiment-design prompt) that is vanishingly unlikely.
+  Easy to add if you disagree.
+- **Token accounting.** `input_tokens`, `output_tokens`,
+  `cache_read_input_tokens` and `cache_creation_input_tokens` are recorded
+  per call and totalled in the run summary.
+
+The `StubBackend` remains for plumbing tests and is **refused in a scored run**.
