@@ -48,12 +48,19 @@ WALL_CLOCK_LIMIT_S = 6 * 3600
 UNCITED_DISCOUNT = 0.5
 MAX_RESLATES = 2          # bounded, so a stubborn proposer cannot spin forever
 
-# An API failure must not kill the run -- but neither should it let the run spin
-# through the whole iteration cap doing nothing. A dev run exhausted its credit
-# balance and burned all 50 iterations in 54 seconds on consecutive 400s,
-# reporting a converged run that had never proposed anything. After this many
-# CONSECUTIVE proposal failures the run finishes with an explicit reason.
-MAX_CONSECUTIVE_PROPOSAL_FAILURES = 3
+# LIVENESS CONDITION. "Never kill the run" is a safety property; without a
+# matching liveness property it degenerates. A dev run exhausted its API credit
+# balance and burned all 50 iterations in 54 seconds on consecutive 400s, then
+# reported itself converged -- every component honouring its contract, the
+# composition producing a confident empty result.
+#
+# This counter covers EVERY path that consumes an iteration without running an
+# experiment, not just proposal failures: API failures, slates where every
+# candidate is dead or invalid, and slates of only-repeats that survive the
+# reslate budget. Iterations that ran no experiment are (correctly) not evidence
+# about saturation, so convergence can never fire on them -- which is precisely
+# why they need their own stopping condition.
+MAX_CONSECUTIVE_UNPRODUCTIVE = 3
 
 # POLICY.md section 6: nothing single-seed is ever designated. Selection,
 # convergence and designation all run on the 3-seed mean. Seed std is 0.0008 and
@@ -104,6 +111,7 @@ class Controller:
         self.best_curve = []        # best-so-far after each COUNTING iteration
         self.stall = 0              # per-iteration reading
         self.per_iter_converged_at = None
+        self._last_ran = False    # did the most recent iteration run an experiment?
         self.t0 = time.time()
 
     # ---------- iteration 0 ----------
@@ -166,7 +174,7 @@ class Controller:
             return self._finish('baseline reproduction failed', None)
         i = 1
         reslates = 0
-        proposal_failures = 0
+        unproductive = 0
         while i < self.max_iters:
             if time.time() - self.t0 > WALL_CLOCK_LIMIT_S:
                 return self._finish('wall-clock backstop reached', i)
@@ -188,17 +196,17 @@ class Controller:
                     stall_count=self.stall, seconds=0,
                     extra={'ran_experiment': False,
                            'counted_toward_convergence': False,
-                           'consecutive_proposal_failures': proposal_failures + 1})
-                proposal_failures += 1
-                if proposal_failures >= MAX_CONSECUTIVE_PROPOSAL_FAILURES:
+                           'consecutive_unproductive': unproductive + 1})
+                unproductive += 1
+                if unproductive >= MAX_CONSECUTIVE_UNPRODUCTIVE:
                     return self._finish(
-                        f'aborted after {proposal_failures} consecutive proposal '
-                        f'failures; the proposer could not be reached, so no '
-                        f'further experiment was possible. Last error: {e}', i)
+                        f'aborted after {unproductive} consecutive iterations that '
+                        f'ran no experiment (liveness condition). The proposer '
+                        f'could not be reached. Last error: {e}', i)
                 i += 1
                 continue
 
-            proposal_failures = 0          # a successful slate resets the counter
+            self._last_ran = False
             outcome = self._execute_first_viable(
                 self._rank(cands), i, usage, api_recovery, forced)
             if outcome == 'all_repeats' and reslates < MAX_RESLATES:
@@ -210,6 +218,15 @@ class Controller:
                 reslates += 1
                 continue
             reslates = 0
+            # Liveness: covers dead/invalid slates and exhausted-reslate repeats
+            # as well as API failures. An experiment running resets it.
+            unproductive = 0 if self._last_ran else unproductive + 1
+            if unproductive >= MAX_CONSECUTIVE_UNPRODUCTIVE:
+                return self._finish(
+                    f'aborted after {unproductive} consecutive iterations that ran '
+                    f'no experiment (liveness condition). Convergence cannot fire '
+                    f'on such iterations, so without this the run would spin to '
+                    f'the {self.max_iters}-iteration cap.', i)
             if self._converged_window():
                 return self._finish(
                     f'window reading: best-so-far improved by no more than {EPS} '
@@ -312,6 +329,7 @@ class Controller:
         improved = m is not None and (prev_best is None or m['primary'] > prev_best)
         if improved:
             self.best = (m['primary'], c['spec'], i)
+        self._last_ran = ran
         if ran:
             self.best_curve.append(self.best[0] if self.best else 0.0)
             gained = (m is not None and

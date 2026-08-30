@@ -337,8 +337,8 @@ something is guaranteed when it is not.
 | 1 | Lock 1: test rows never enter the agent's process | **CODE** | `loader.load_agent` date-filters at parse; `test_firewall.py` |
 | 1 | Lock 2: evaluate wrapper rejects test-window data | **CODE** | `firewall.assert_agent_safe`; breach test forges both routes |
 | 1 | Selection and convergence use valid exclusively | **CODE** | no code path can construct a test split |
-| 1 | Test scored **exactly once** | **PROMISE** | see gap 2 below |
-| 1 | The test result cannot change the submission | **PROMISE** | see gap 3 below |
+| 1 | Test scored **exactly once** | **CODE** *(was PROMISE; mechanized §14)* | one-shot marker `TEST_SCORED_ONCE.json`; second run refused |
+| 1 | The test result cannot change the submission | **CODE** *(was PROMISE; mechanized §14)* | `--lock` fingerprints the submission before scoring; hash mismatch refused |
 | 2 | Diagnostic clipped to the valid window | **CODE** | `diagnostics.load_unbiased_diag` asserts `max_date <= VALID_END` |
 | 2 | Diagnostic never trained on | **CODE** | loader never includes it in train |
 | 2 | Diagnostic never in selection or convergence | **CODE (by construction)** | no decision path reads `DIAG_*`; not separately asserted — see gap 4 |
@@ -369,16 +369,11 @@ But the audit did surface three weaker spots that were previously unstated. None
 is a policy/code contradiction; all three are promises that read stronger than
 they are, and they are recorded here rather than left implicit.
 
-**Gap 2 — "test scored exactly once" is unenforced.** `human_only_test_scoring.py`
-requires an explicit confirmation flag and is not importable by the agent, but
-nothing stops it being run twice. *Mechanizable:* write a one-shot marker on
-first use and refuse subsequent runs. Not implemented; flagged for a decision.
+**Gap 2 — "test scored exactly once" was unenforced. NOW MECHANIZED (§14).**
 
-**Gap 3 — "the test result cannot change the submission" is unenforceable as
-written.** A human can always edit afterwards. *Mechanizable in part:* hash the
-designated submission and commit it to git **before** test scoring runs, so any
-later change is visible in history rather than prevented. Not implemented;
-flagged.
+**Gap 3 — "the test result cannot change the submission" was unenforceable as
+written. NOW MECHANIZED IN THE FORM THAT MATTERS (§14):** the submission is
+fingerprinted before the score is known, and a changed file is refused.
 
 **Gap 4 — the diagnostic's exclusion from selection is true by construction, not
 by assertion.** No decision path reads `DIAG_*` keys, but nothing fails if a
@@ -423,3 +418,47 @@ This is a second instance of the F8 lesson: the rule was written down correctly
 and implemented incompletely, and only executing it against real run data
 surfaced the gap. Unit tests written from the policy text would not have caught
 it, because the policy text did not mention iteration 0 either.
+
+
+## 14. Test scoring: the last two promises, mechanized
+
+Both clauses in §1 that the §12 audit found to be PROMISE are now CODE. These
+were the ones a judge could reasonably doubt, because **the test labels are
+sitting on our disk** — the discipline was self-imposed and, until now, only
+self-attested.
+
+**`--lock`** fingerprints the designated submission: SHA-256, byte size, row
+count, timestamp, and the git commit, written to `reports/SUBMISSION_LOCK.json`.
+It must be run **before** scoring. This is what makes "the test result cannot
+change the submission" checkable rather than merely promised: the submission is
+committed to while the test score is still unknown.
+
+**`--score`** refuses unless a lock exists *and* the file still hashes to the
+locked value. A submission edited after locking cannot be scored as though it
+were the locked one. On success it writes `reports/TEST_SCORED_ONCE.json` and
+**refuses every subsequent run**, naming the prior score and timestamp.
+
+Neither mechanism can stop a determined human deleting a marker file. That is
+not the claim. The claim is that the honest path is now the default path, that
+any deviation requires a deliberate destructive act rather than an oversight,
+and that both files are committed to git so a deviation is visible in history.
+
+**Deliberately left as a PROMISE:** the diagnostic's exclusion from selection
+(§2). It is true by construction — no decision path reads `DIAG_*` — and adding
+an assertion would guard against a hypothetical future edit rather than any
+present risk. It stays labelled honestly rather than dressed up.
+
+## 15. Liveness condition
+
+"An API failure must never kill the run" is a **safety** property. Composed with
+"iterations that ran no experiment are not evidence about saturation" — also
+correct — it removed every condition under which a stalled run could stop for a
+good reason. A run exhausted its API credits and passed all 50 iterations in 54
+seconds, reporting itself converged.
+
+The run now aborts after **3 consecutive iterations in which no experiment ran**,
+naming the last error. This covers **every** unproductive path, not just API
+failures: dead or invalid slates, and slates of only-repeats that survive the
+reslate budget. `tests/test_liveness.py` exercises all three modes plus the
+reset, confirming each aborts in under 12 iterations rather than at the cap, and
+that an intervening productive iteration resets the counter.
