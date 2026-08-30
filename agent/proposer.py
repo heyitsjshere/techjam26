@@ -144,6 +144,8 @@ class Proposer:
         user = self._prompt(briefing, action_space_doc, history, stall,
                             forced_high_variance)
         slate, usage, recovery = self.backend.complete(SYSTEM, user)
+        if slate is None or not getattr(slate, 'candidates', None):
+            raise ProposerError('proposer returned no parseable slate')
         cands = [c.model_dump() for c in slate.candidates]
         if not cands:
             raise ProposerError('proposer returned an empty slate')
@@ -197,7 +199,7 @@ class AnthropicBackend:
 
     RETRYABLE_STATUS = (408, 409, 429, 500, 502, 503, 504, 529)
 
-    def __init__(self, model=DEFAULT_MODEL, max_tokens=16000, effort='high'):
+    def __init__(self, model=DEFAULT_MODEL, max_tokens=24000, effort='high'):
         import anthropic
         if not os.environ.get('ANTHROPIC_API_KEY'):
             raise RuntimeError(
@@ -233,9 +235,30 @@ class AnthropicBackend:
                     output_config={'effort': self.effort},
                     output_format=Slate,
                 )
-                if getattr(r, 'stop_reason', None) == 'refusal':
+                stop = getattr(r, 'stop_reason', None)
+                if stop == 'refusal':
                     raise ProposerError(
                         f'model refused: {getattr(r, "stop_details", None)}')
+                # messages.parse() returns parsed_output=None for an INCOMPLETE
+                # response (typically stop_reason='max_tokens') rather than
+                # raising. That is a successful HTTP call with unusable content,
+                # so it is not caught by any except-clause for API errors. It
+                # killed a scored run. Treat it as a retryable proposal failure.
+                if r.parsed_output is None:
+                    delay = BASE_BACKOFF_S * (2 ** (attempt - 1))
+                    recovery.append({
+                        'attempt': attempt, 'error': 'IncompleteResponse',
+                        'stop_reason': stop, 'retryable': True,
+                        'action': (f'parsed_output was None (stop_reason={stop}); '
+                                   f'backoff {delay:.1f}s, retry '
+                                   f'{attempt + 1}/{MAX_ATTEMPTS}')})
+                    if attempt == MAX_ATTEMPTS:
+                        raise ProposerError(
+                            f'proposer returned an incomplete response '
+                            f'{MAX_ATTEMPTS} times (stop_reason={stop}); no '
+                            f'parseable slate')
+                    time.sleep(delay)
+                    continue
                 usage = self._usage(r)
                 return r.parsed_output, usage, recovery
             except (A.BadRequestError, A.AuthenticationError,

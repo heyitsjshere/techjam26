@@ -183,13 +183,16 @@ class Controller:
                 cands, usage, api_recovery = self.proposer.propose(
                     briefing_mod.full_briefing(), self._action_doc(),
                     self.history[-12:], self.stall, forced)
-            except ProposerError as e:
+            except Exception as e:   # ProposerError, or any proposer defect
                 self.log.iteration(
                     i=i, tier='A', hypothesis='(proposal failed)', rationale='',
                     expected_gain=0.0, expected_gain_derivation='', spec=None,
                     error=str(e),
                     recovery='proposal abandoned; requesting a fresh slate next '
-                             'iteration. Run continues.',
+                             'iteration. Run continues. (Any proposer defect is '
+                             'caught here, not just API errors -- a scored run '
+                             'was killed by an AttributeError that no '
+                             'error-specific handler covered.)',
                     api_recovery=list(getattr(self.backend, 'last_recovery', [])),
                     drift=None, metrics=None, diagnostic=None, accepted=False,
                     best_so_far=self.best[0] if self.best else None,

@@ -18,6 +18,14 @@ def check(n, cond, msg=''):
 
 CAP = 50
 
+def run_flat_fwd():
+    def f(spec, seeds=None):
+        return baseline_ok(spec, seeds) | {
+            'metrics': {'primary': 0.6015, 'primary_std': 0.0002, 'GAUC': 0.66,
+                        'nDCG@5': 0.53, 'n_seeds': 3}}
+    return f
+
+
 def build(backend, executor_run):
     """A Controller with the proposer/executor swapped out, so the loop is
     exercised without loading 1.4M rows or calling an API."""
@@ -100,6 +108,44 @@ check('the identical spec was executed only ONCE', calls['n'] == 1,
       f"executed {calls['n']}x (excluding the iteration-0 baseline)")
 check('repeats were rejected by the cache', summary.get('repeat_specs_rejected', 0) > 0,
       str(summary.get('repeat_specs_rejected')))
+
+print("\n=== a proposer defect that is NOT an API error must not kill the run ===")
+# The scored-run crash: messages.parse() returned parsed_output=None for an
+# incomplete response, so `slate.candidates` raised AttributeError -- a
+# successful HTTP call with unusable content, caught by no API-error handler.
+class RaisesNonApiError:
+    last_recovery = []
+    def propose(self, *a, **k):
+        raise AttributeError("'NoneType' object has no attribute 'candidates'")
+c = build(RaisesNonApiError(), baseline_ok)
+summary = c.run()
+check('run completes instead of crashing', isinstance(summary, dict))
+check('stops via the liveness condition, not a traceback',
+      'liveness condition' in summary['convergence_reason'], summary['convergence_reason'][:90])
+check('the non-API error is recorded', 'NoneType' in summary['convergence_reason'],
+      summary['convergence_reason'][:120])
+
+print("\n=== an incomplete parse is retried, then degrades gracefully ===")
+class IncompleteThenFine:
+    """Mimics parsed_output=None: raises ProposerError after its retries."""
+    last_recovery = [{'attempt': 1, 'error': 'IncompleteResponse', 'retryable': True}]
+    def __init__(self): self.n = 0
+    def propose(self, *a, **k):
+        self.n += 1
+        if self.n <= 2:
+            from proposer import ProposerError
+            raise ProposerError('proposer returned an incomplete response')
+        return ([{'hypothesis': 'h', 'rationale': 'r', 'expected_gain': 0.01,
+                  'expected_gain_derivation': '[POSITIVE_RATE]', 'tier': 'A',
+                  'cited_facts': ['POSITIVE_RATE'],
+                  'spec': dict(spec_ok(), params={'num_leaves': 31 + self.n})}],
+                {'input_tokens': 1, 'output_tokens': 1}, [])
+c = build(IncompleteThenFine(), run_flat_fwd())
+summary = c.run()
+check('two incomplete responses do not end the run',
+      'liveness' not in summary['convergence_reason'], summary['convergence_reason'][:90])
+check('the run goes on to converge normally',
+      'window reading' in summary['convergence_reason'])
 
 print("\n=== a productive iteration resets the counter ===")
 state = {'i': 0}
