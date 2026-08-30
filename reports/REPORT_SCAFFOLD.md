@@ -211,7 +211,9 @@ evidence behind it. It is independent of the convergence-reading ambiguity
 runs — is itself part of the evidence, and a disclosed choice that turned out
 not to matter is stronger evidence than one that quietly helped.
 
-### Corollary: cross-run structural variance is near zero
+### Corollary (round 2 data; superseded in part — see the round 3 update below)
+
+**Cross-run structural variance is near zero**
 
 Diffing the designated specs from round 2 confirms the agent is not exploring a
 wide space:
@@ -227,3 +229,47 @@ hyperparameter axes as flat. So the three runs are near-replicates rather than
 independent samples, the apparent run-to-run variation in which structural moves
 get found is small-sample noise around a strongly attracting configuration, and
 the scored run's structural outcome is substantially predetermined.
+
+
+### F7 update — round 3, after scoping attribution discipline to feature blocks
+
+Scoping `ONE_CHANGE_PER_SPEC` to feature blocks (leaving objective and grouping
+exempt) recovered listwise reach from 0/3 to 2/3, and in both cases the switch
+happened at the **forced high-variance iteration** — the controller mechanism
+doing exactly its job. But the deeper pattern held and sharpened.
+
+**Still no run reached iteration 5. All three converged at iteration 3 under
+both readings.** That is now **nine consecutive dev runs** with the same
+outcome, across three different harness configurations.
+
+**The round 2 "near-zero variance" corollary needs qualifying.** In round 3 all
+three designated specs differ from one another. But the *trajectory* is
+near-identical: every run opened with `binary/base5` at iteration 0, then
+`lambdarank · chunk=6 · [base5, item_agg]` at iteration 1, then the same plus
+`dur_feats` at iteration 2. The runs are structurally identical for their first
+two experiments and diverge only at the forced iteration. So the agent's
+reasoning is highly reproducible; what varies is one late roll of the dice.
+
+**The finding that matters most.** Those identical structural configs at
+iterations 1–2 produced materially different scores, and the *only* difference
+between them was hyperparameters:
+
+| run | `min_data_in_leaf` | `lambda_l2` | `max_cat_threshold` | it1 | it2 |
+|---|---|---|---|---|---|
+| 1 | 100 | 10.0 | 64 | 0.60206 | 0.60272 |
+| 2 | 50 | 1.0 | 64 | 0.60208 | 0.60209 |
+| 3 | 50 | 1.0 | **128** | 0.60105 | 0.60109 |
+
+**Hyperparameter axes that Phase 1 measured as flat move the score by ~0.001 —
+roughly 40% of the entire attainable headroom of ~0.0025.** Run 3 drew
+`max_cat_threshold=128` on its first experiment, lost ~0.001 to it, and had no
+iterations left to discover why: it finished at **−0.00009 against the official
+baseline**, i.e. it failed to beat FM at all.
+
+This is the sharpest statement of the benchmark critique. The achievable signal
+is the same order of magnitude as the noise from parameters that do not matter.
+An agent gets ~3 experiments before the stopping rule fires, which is not enough
+to separate the two, so **whether a run clears the baseline depends materially
+on an arbitrary early hyperparameter draw**. One dev run in three did not clear
+it. That is a property of the benchmark's headroom-to-eps ratio, not a fixable
+defect in the agent, and the scored run carries that risk.
