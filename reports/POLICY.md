@@ -82,3 +82,38 @@ interventions are not counted. The intervention counter applies to the scored
 run only, where the target is zero. Development runs and the scored run are
 kept strictly separate, and that boundary is what makes the zero-intervention
 claim true.
+
+## 6. Submission designation rule — pre-registered
+
+Written **before** the scored run, so it cannot be chosen after seeing which
+config won.
+
+**Rule.** If the best-valid config and the most-structurally-justified config
+diverge, **the structurally-justified config is designated as final.**
+
+A config is *structurally justified* when it was proposed to correct a stated,
+measurable mismatch between the training setup and the evaluation setup — for
+example a train/eval ranking-group-size mismatch, or an objective that does not
+match the metric's form. A config is *merely best-valid* when its advantage
+comes from the value of a hyperparameter, a seed, or a feature that was selected
+because it scored well, with no mechanism named in advance.
+
+**Rationale.** Phase 1 ran 79 experiments all selected on the same 124,909-row
+validation split. Selection over that many candidates on one split buys
+selection risk proportional to the number of candidates and to how flat the
+landscape is, and this landscape is very flat: after the first two moves,
+everything returned zero within a 0.0004 seed std. A structural fix does not
+carry that risk in the same way — it is justified by a property of the data that
+was measured *before* the experiment and holds independently of the split it was
+scored on. Phase 1 also demonstrated the failure mode directly: the best single
+seed (0.6046) beat the 5-seed mean (0.6041) by more than 2σ purely through
+selection.
+
+**Consequences, accepted in advance:**
+- The designated submission may score lower on valid than some config we ran.
+  That is the intended trade, not a mistake to be corrected later.
+- Ties (within 1 seed std) resolve to the structurally-justified config.
+- Any config accepted as an improvement must be confirmed at ≥3 seeds. Single-seed
+  results are never designated.
+- Marginal deltas measured from different origins are not additive and must not
+  be summed to rank candidates. Interactions are measured, not inferred.
