@@ -167,3 +167,62 @@ LOO encoding, ensembling, `is_rand`, and `lambdarank` at group=user.
 new feature (it caught both bugs before the metric did), an out-of-fold-only
 rule for target encoding, and multi-seed confirmation before any config is
 accepted as an improvement.
+
+---
+
+# Addendum — closing the delta arithmetic (Item 1)
+
+The Phase 1 marginals above (+0.0033 chunking, +0.0022 `rank_xendcg`) summed to
++0.0055 against a measured +0.0025. **Both marginals were single-seed**, against
+a seed std of 0.0004, and worse, they were measured from **different origins** —
+chunking from `lambdarank`/no-chunk (0.5988), `rank_xendcg` from `binary`/chunk=6
+(0.6022). Neither origin was FM, so the two were never additive to begin with.
+
+## The 2×2, 5 seeds per cell, common origin
+
+Features held at `base5 + duration + dur_feats`.
+
+| | chunk=None | chunk=6 | **effect of chunking** |
+|---|---|---|---|
+| `lambdarank` | 0.5994 ± 0.0002 | 0.6018 ± 0.0004 | **+0.0024** |
+| `rank_xendcg` | 0.6009 ± 0.0003 | **0.6041 ± 0.0004** | **+0.0032** |
+| **effect of xendcg** | **+0.0015** | **+0.0022** | |
+
+Reference: `binary` 0.6017 ± 0.0004 (grouping is a no-op for a pointwise
+objective). Official FM 0.6016.
+
+## Resolution
+
+- **Interaction = +0.0008.** The two moves are mildly *synergistic*, not
+  independent: chunking is worth more under the listwise loss (+0.0032) than
+  under the pairwise one (+0.0024). Recording two independent marginals would
+  have mis-stated this in both directions.
+- **Sum of marginals from the `lambdarank`/None corner = +0.0039; actual joint
+  effect = +0.0046.** From a common origin the marginals *undershoot* the joint
+  by the interaction term. The original +0.0055 was not this arithmetic at all.
+- **The real source of the gap: the `lambdarank`/no-chunk corner sits 0.0022
+  BELOW FM.** The joint move is worth +0.0046 measured from that corner, but
+  0.0022 of it is spent climbing back to the baseline. Net versus FM:
+  +0.0046 − 0.0022 = **+0.0024**, which is the measured +0.0025 within noise.
+
+Single-seed inflation accounts for the rest: the chunking marginal drops from
++0.0033 to +0.0024 at 5 seeds.
+
+## What the knowledge base records
+
+Not "chunking is worth +0.0024 and listwise is worth +0.0022." Instead: **the
+2×2 cell means with their interaction term, and the fact that the natural
+corner to measure from (`lambdarank` at group=user) is itself below the
+baseline.** A knowledge base holding two independent marginals would let the
+agent rank a candidate by summing them, and it would be wrong by the interaction
+term in one direction and by the sub-baseline origin in the other.
+
+**General rule, now enforced in POLICY.md §6:** deltas measured from different
+origins are not additive and must not be summed to rank candidates.
+Interactions are measured, not inferred. Any accepted improvement is confirmed
+at ≥3 seeds.
+
+Corrected headline, unchanged: **+0.0025 ± 0.0004 over FM.** A pointwise GBDT
+(`binary`, 0.6017) matches FM almost exactly, so the entire Phase 1 gain is
+attributable to the listwise objective plus group-size matching, and to nothing
+about the model family.
