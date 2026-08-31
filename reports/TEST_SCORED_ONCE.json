@@ -1,0 +1,12 @@
+{
+ "scored_at": "2026-08-31T01:22:28Z",
+ "submission_sha256": "85c935323fdd4338e15149c2572b37e2bd4ab2e3a0428624b3c744c722898b62",
+ "locked_at": "2026-08-31T01:22:17Z",
+ "git_commit_at_lock": "1599c7c6e51ac2d2f19ce19645d241c67e547250",
+ "git_commit_at_score": "1599c7c6e51ac2d2f19ce19645d241c67e547250",
+ "alignment_mismatches": 0,
+ "GAUC": 0.661,
+ "nDCG@5": 0.52862,
+ "primary": 0.59481,
+ "delta_vs_fm_test": 0.00021
+}

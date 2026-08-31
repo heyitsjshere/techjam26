@@ -146,3 +146,29 @@ run: the window reading has now extended zero runs out of ten. The agent
 improved once (0.60141 → 0.60208), effectively plateaued (→ 0.60209), and
 stopped. That null result is reported as evidence, not buried — a disclosed
 choice that turned out not to matter is stronger than one that quietly helped.
+
+
+---
+
+## Test scoring — performed once, on 2026-08-31T01:22:28Z
+
+Sequence enforced by the mechanism, not by intention: `--lock` ran first and
+fingerprinted the submission **while the test score was still unknown**, then
+`--score` verified the hash still matched before reading a single test label.
+
+| | |
+|---|---|
+| Submission SHA-256 | `85c935323fdd4338e15149c2572b37e2bd4ab2e3a0428624b3c744c722898b62` |
+| Locked at | 2026-08-31T01:22:17Z (commit `1599c7c6e5`) |
+| Scored at | 2026-08-31T01:22:28Z |
+| **Alignment mismatches** | **0** |
+| Test GAUC | 0.661 |
+| Test nDCG@5 | 0.52862 |
+| **Test primary** | **0.59481** |
+| Delta vs official FM test (0.5946) | **+0.0002** |
+
+A second scoring attempt was made deliberately to confirm the one-shot marker
+fires. It was refused.
+
+The +0.0002 test delta is **smaller than the baseline's own 0.0008 seed std**. It
+clears the gate; it is not distinguishable from a tie. Reported as such.
