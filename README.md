@@ -1,13 +1,13 @@
-# An autonomous ML research agent for RecSys — KuaiRand-Pure
+# An autonomous ML research agent for RecSys on KuaiRand-Pure
 
-TikTok TechJam 2026, Track 2. An LLM-driven agent that runs the full MLE loop —
-reproduce the baseline, form hypotheses, engineer features, train, evaluate,
-reflect, repeat — on KuaiRand-Pure, with **zero human interventions** during the
+TikTok TechJam 2026, Track 2. An LLM-driven agent that runs the full MLE loop
+(reproduce the baseline, form hypotheses, engineer features, train, evaluate,
+reflect, repeat) on KuaiRand-Pure, with **zero human interventions** during the
 scored run.
 
 > **The headline result is a critique of the benchmark, not a score.**
 > In one run the agent improved its validation score on **three consecutive
-> iterations**, monotonically, with no wasted move — accumulating **+0.00197**
+> iterations**, monotonically, with no wasted move, accumulating **+0.00197**
 > against a convergence threshold of **0.002**. It was stopped for *insufficient
 > progress*, **0.00003 short**, about a tenth of its own seed standard deviation.
 > An agent that improved on every single iteration was terminated for not
@@ -19,13 +19,13 @@ scored run.
 
 | | GAUC | nDCG@5 | primary | delta |
 |---|---|---|---|---|
-| Official FM — validation | 0.6674 | 0.5357 | 0.6016 | — |
-| **Agent — validation** (3-seed mean) | 0.6704 | 0.5378 | **0.60209** | **+0.00049** |
-| Official FM — test | 0.6610 | 0.5282 | 0.5946 | — |
-| **Agent — test** (scored once) | 0.6610 | 0.5286 | **0.5948** | **+0.0002** |
+| Official FM (validation) | 0.6674 | 0.5357 | 0.6016 | |
+| **Agent (validation)** (3-seed mean) | 0.6704 | 0.5378 | **0.60209** | **+0.00049** |
+| Official FM (test) | 0.6610 | 0.5282 | 0.5946 | |
+| **Agent (test)** (scored once) | 0.6610 | 0.5286 | **0.5948** | **+0.0002** |
 
 Zero alignment mismatches on test. **The test delta is smaller than the
-baseline's own 0.0008 seed std** — it clears the baseline but is not
+baseline's own 0.0008 seed std**; it clears the baseline but is not
 distinguishable from a tie, and we report it that way. Full table:
 [reports/RESULTS.md](reports/RESULTS.md).
 
@@ -38,13 +38,13 @@ A manual probe of **79 controlled experiments** (Phase 1) measured the
 practically attainable headroom above the FM baseline at roughly **+0.0025**.
 Three independent lines of evidence agree the benchmark is saturated:
 
-1. The organizers' own ablations — more features, more capacity, both flat.
+1. The organizers' own ablations: more features and more capacity, both flat.
 2. Swapping the model family entirely moves nothing: a pointwise GBDT scores
-   0.6017 against the FM's 0.6016.
+ 0.6017 against the FM's 0.6016.
 3. A collaborative-filtering feature *hurts* validation while consistently
-   *helping* on randomised-exposure traffic — because validation impressions
-   were already preference-matched by a strong production recommender. We are
-   re-ranking a candidate set someone better-informed already filtered.
+ *helping* on randomised-exposure traffic, because validation impressions
+ were already preference-matched by a strong production recommender. We are
+ re-ranking a candidate set someone better-informed already filtered.
 
 Against ~0.0025 of headroom, the stopping rule uses eps = 0.002. **The threshold
 is roughly 80% of the entire prize**, which permits about one meaningful
@@ -71,19 +71,19 @@ curl -L -o KuaiRand-Pure.tar.gz https://zenodo.org/records/10439422/files/KuaiRa
 tar xzf KuaiRand-Pure.tar.gz -C kuairand-starter-kit/
 ```
 
-Set your API key **in the environment only** — never in a file in this repo:
+Set your API key **in the environment only**; never in a file in this repo:
 
 ```bash
 export ANTHROPIC_API_KEY='sk-ant-...'
-export ANTHROPIC_WORKSPACE_ID='wrkspc_...'   # only for identity-linked keys
+export ANTHROPIC_WORKSPACE_ID='wrkspc_...' # only for identity-linked keys
 ```
 
 ## Reproduce
 
 ```bash
-./.venv/bin/python -m pytest -h >/dev/null 2>&1  # tests are plain scripts, see below
+./.venv/bin/python -m pytest -h >/dev/null 2>&1 # tests are plain scripts, see below
 for t in firewall guards grouping designation liveness seeding_boundary; do
-  ./.venv/bin/python tests/test_$t.py
+ ./.venv/bin/python tests/test_$t.py
 done
 ```
 
@@ -96,7 +96,7 @@ Run the agent (a dev run; the scored run used `--mode scored`):
 Reproduce Phase 1's manual probe:
 
 ```bash
-./.venv/bin/python experiments/p1_step1.py      # isolated loss-function delta
+./.venv/bin/python experiments/p1_step1.py # isolated loss-function delta
 ./.venv/bin/python experiments/p1_interaction.py # the 2x2, 5 seeds per cell
 ```
 
@@ -113,12 +113,22 @@ Build and score a submission (human-only paths, deliberately separate):
 
 ## How it works
 
+![How the agent differs from a human MLE: the same loop, with judgment made explicit as cited fact keys, leakage made impossible by construction, negative results kept in a knowledge base, and stopping governed by a pre-registered rule](reports/figures/pipeline.svg)
+
+The agent runs the same loop a human MLE runs. What changes is where the
+judgment lives. A human engineer carries intuition about which feature is worth
+trying, notices leakage on review, forgets most negative results, and stops when
+the work feels done. This agent has to cite a briefing fact for every prediction
+it makes, cannot reach a leaking encoding because the guard sits inside the
+encoder, keeps every negative result in the run log, and stops on a rule that was
+written down before the run began.
+
 **Two-tier action space.** The LLM emits a structured experiment spec; a
 deterministic harness executes it. The agent never rewrites the pipeline, which
 is what keeps token cost at ~51k for a full run.
 
-**The agent derives its own hypotheses.** It is given the *action space* — every
-move, including the ones our manual probe found to be dead ends — and a *domain
+**The agent derives its own hypotheses.** It is given the *action space* (every
+move, including the ones our manual probe found to be dead ends) and a *domain
 briefing* of structural facts (train averages 43.5 rows per user against 5.6 in
 evaluation; the baseline optimises a pointwise loss while the metrics are
 ranking metrics). It is **not** given any measured delta, any verdict about what
@@ -148,10 +158,10 @@ every clause as CODE or PROMISE, so nothing reads as a mechanism that isn't one.
 
 **The result is small and we do not dress it up.** +0.0002 on test is inside the
 baseline's seed noise. The honest claim is that a fully autonomous run cleared
-the baseline on a saturated benchmark with zero interventions — not that it won
+the baseline on a saturated benchmark with zero interventions; not that it won
 by a meaningful margin.
 
-**The agent's gain predictions are badly calibrated** — it predicts 0.045–0.062
+**The agent's gain predictions are badly calibrated.** It predicts 0.045–0.062
 and realises 0.0003–0.0014, optimistic by two orders of magnitude. Its *ordering*
 is sound, which is what the controller consumes. We deliberately did not fix
 this: calibrating it would mean telling the agent the realistic scale of
@@ -163,7 +173,7 @@ from the specification: a duplicated `group_sizes` that killed every chunked
 spec; a designation rule that could designate a config worse than the baseline;
 a guard that let a run spin through all 50 iterations proposing nothing; and a
 model string that was logged correctly for three attempts and never read back.
-That last one is the pattern in miniature — **a logged value nobody checks is not
+That last one is the pattern in miniature: **a logged value nobody checks is not
 a control.**
 
 **What we would do next.** Longer training-window aggregates keyed on cold items,
@@ -175,13 +185,13 @@ isolate variables.
 
 ## Deliverables
 
-- [reports/RESULTS.md](reports/RESULTS.md) — results and resource report
-- [reports/POLICY.md](reports/POLICY.md) — pre-registered evaluation policy, all clauses classified
-- [reports/PHASE1_FINDINGS.md](reports/PHASE1_FINDINGS.md) — the 79-experiment manual probe
-- [reports/HARNESS_DESIGN.md](reports/HARNESS_DESIGN.md) — architecture and seeding boundary
-- [reports/SCORED_RUN_DISCLOSURE.md](reports/SCORED_RUN_DISCLOSURE.md) — every scored attempt, including three discarded
-- [reports/REPORT_SCAFFOLD.md](reports/REPORT_SCAFFOLD.md) — findings F1–F11
-- `reports/runlog_scored_final.jsonl` — the scored run's per-iteration log
+- [reports/RESULTS.md](reports/RESULTS.md): results and resource report
+- [reports/POLICY.md](reports/POLICY.md): pre-registered evaluation policy, all clauses classified
+- [reports/PHASE1_FINDINGS.md](reports/PHASE1_FINDINGS.md): the 79-experiment manual probe
+- [reports/HARNESS_DESIGN.md](reports/HARNESS_DESIGN.md): architecture and seeding boundary
+- [reports/SCORED_RUN_DISCLOSURE.md](reports/SCORED_RUN_DISCLOSURE.md): every scored attempt, including three discarded
+- [reports/REPORT_SCAFFOLD.md](reports/REPORT_SCAFFOLD.md): findings F1–F11
+- `reports/runlog_scored_final.jsonl`: the scored run's per-iteration log
 
 ## Contributions
 

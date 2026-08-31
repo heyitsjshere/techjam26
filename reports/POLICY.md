@@ -1,4 +1,4 @@
-# Evaluation policy — locked before Phase 1
+# Evaluation policy, locked before Phase 1
 
 Committed **before** the first Phase 1 experiment was run, and before the agent
 existed. Timestamped by the git history of this file. Nothing below was decided
@@ -16,16 +16,16 @@ the labels were withheld from us.
 Two independent locks, implemented in `src/firewall.py`:
 
 - **Lock 1 (structural).** `loader.load_agent()` discards every row dated past
-  `VALID_END` during parsing. Test rows are never resident in the agent's
-  process. There is no argument, flag, or config key that changes this.
+ `VALID_END` during parsing. Test rows are never resident in the agent's
+ process. There is no argument, flag, or config key that changes this.
 - **Lock 2 (assertion).** Every `Split` carries its own date range. The agent's
-  only scoring entry point, `metrics.score()`, asserts that range ends at or
-  before `VALID_END` and that the split is not named `test`. A breach raises
-  `FirewallBreach` and halts.
+ only scoring entry point, `metrics.score()`, asserts that range ends at or
+ before `VALID_END` and that the split is not named `test`. A breach raises
+ `FirewallBreach` and halts.
 
 `tests/test_firewall.py` verifies both locks fire, verifies no `src/` module
 imports the human-only path, and verifies our loader's row order is
-bit-identical to the organizers' `data.load()` — the property `row_id`
+bit-identical to the organizers' `data.load()`; the property `row_id`
 alignment depends on.
 
 **Policy.** Selection and convergence use `valid` exclusively. Test is scored
@@ -49,7 +49,7 @@ discarded at parse time because it overlaps test.
 - **Not** in selection. **Not** in the convergence calculation. **Not** trained on.
 
 Measured at wiring time: positive rate 0.0806 under random exposure vs 0.3133
-on valid — the production recommender is worth a ~4× lift in long-view rate.
+on valid; the production recommender is worth a ~4× lift in long-view rate.
 The diagnostic answers: does our ranking hold up on traffic the production
 recommender did not choose?
 
@@ -64,15 +64,15 @@ organizers do not compute.
 ## 4. Excluded from the action space
 
 - **Same-row outcome columns** (`long_view`, `play_time_ms`, `is_click`,
-  `is_like`, `is_follow`, `is_comment`, `is_forward`, `is_hate`,
-  `profile_stay_time`, `comment_stay_time`, `is_profile_enter`) are dropped from
-  every split's feature frame at load time. Historical aggregates over the
-  **train window only**, via `loader.train_outcomes()`, are legal and used.
-- **`is_rand`** — confirmed constant 0 across both standard logs in Phase 0.
-  Carries no information. Dropped by decision.
-- **`log_random` as training data** — the starter kit references it in zero
-  lines of code; the README lists it only as an optional unbiased *validation*
-  set. Not trained on.
+ `is_like`, `is_follow`, `is_comment`, `is_forward`, `is_hate`,
+ `profile_stay_time`, `comment_stay_time`, `is_profile_enter`) are dropped from
+ every split's feature frame at load time. Historical aggregates over the
+ **train window only**, via `loader.train_outcomes()`, are legal and used.
+- **`is_rand`**, confirmed constant 0 across both standard logs in Phase 0.
+ Carries no information. Dropped by decision.
+- **`log_random` as training data**; the starter kit references it in zero
+ lines of code; the README lists it only as an optional unbiased *validation*
+ set. Not trained on.
 - **No external training data. No pretrained weights.**
 
 ## 5. Manual-intervention accounting
@@ -83,7 +83,7 @@ run only, where the target is zero. Development runs and the scored run are
 kept strictly separate, and that boundary is what makes the zero-intervention
 claim true.
 
-## 6. Submission designation rule — pre-registered
+## 6. Submission designation rule, pre-registered
 
 Written **before** the scored run, so it cannot be chosen after seeing which
 config won.
@@ -92,7 +92,7 @@ config won.
 diverge, **the structurally-justified config is designated as final.**
 
 A config is *structurally justified* when it was proposed to correct a stated,
-measurable mismatch between the training setup and the evaluation setup — for
+measurable mismatch between the training setup and the evaluation setup, for
 example a train/eval ranking-group-size mismatch, or an objective that does not
 match the metric's form. A config is *merely best-valid* when its advantage
 comes from the value of a hyperparameter, a seed, or a feature that was selected
@@ -103,7 +103,7 @@ validation split. Selection over that many candidates on one split buys
 selection risk proportional to the number of candidates and to how flat the
 landscape is, and this landscape is very flat: after the first two moves,
 everything returned zero within a 0.0004 seed std. A structural fix does not
-carry that risk in the same way — it is justified by a property of the data that
+carry that risk in the same way; it is justified by a property of the data that
 was measured *before* the experiment and holds independently of the split it was
 scored on. Phase 1 also demonstrated the failure mode directly: the best single
 seed (0.6046) beat the 5-seed mean (0.6041) by more than 2σ purely through
@@ -111,14 +111,14 @@ selection.
 
 **Consequences, accepted in advance:**
 - The designated submission may score lower on valid than some config we ran.
-  That is the intended trade, not a mistake to be corrected later.
+ That is the intended trade, not a mistake to be corrected later.
 - Ties (within 1 seed std) resolve to the structurally-justified config.
 - Any config accepted as an improvement must be confirmed at ≥3 seeds. Single-seed
-  results are never designated.
+ results are never designated.
 - Marginal deltas measured from different origins are not additive and must not
-  be summed to rank candidates. Interactions are measured, not inferred.
+ be summed to rank candidates. Interactions are measured, not inferred.
 
-## 7. Iteration-0 baseline reproduction tolerance — pre-registered
+## 7. Iteration-0 baseline reproduction tolerance, pre-registered
 
 Stated **before** the scored run so that "did the baseline reproduce" is a
 numeric criterion, never a post-hoc judgement.
@@ -132,7 +132,7 @@ numeric criterion, never a post-hoc judgement.
 
 0.0008 is the organizers' published 5-seed standard deviation
 (`baseline_scores.json`). Two of them is a ~95% interval, so a correct pipeline
-fails this at roughly a 1-in-20 rate on seed noise alone — tight enough to catch
+fails this at roughly a 1-in-20 rate on seed noise alone, tight enough to catch
 a real pipeline defect, loose enough not to fail on chance.
 
 **On failure the run halts.** It does not continue and it does not retry with a
@@ -158,7 +158,7 @@ against target leakage is out-of-fold encoding **enforced at the code level**
 (`guards.check_encoding`, called from inside the encoder, so it also catches
 agent-written Tier B code that bypasses the spec schema). That is the mechanism
 that makes leakage structurally impossible for the aggregate features. The drift
-check exists to catch what that enforcement does not cover — a *new* feature
+check exists to catch what that enforcement does not cover; a *new* feature
 family whose construction leaks by some route the encoder does not mediate.
 
 **Its calibration band is narrow.** The observations span 0.049 to 0.268 for
@@ -166,13 +166,13 @@ legitimate blocks and 0.769 for the one known leak. Rejecting at 0.40 therefore:
 
 - **catches gross leakage**, of the magnitude Phase 1 actually produced;
 - **would miss a subtle leak** sitting anywhere around 0.30–0.40, and would very
-  likely miss one below 0.27, which is inside the legitimate range;
+ likely miss one below 0.27, which is inside the legitimate range;
 - has **exactly one known-positive calibration point.** A threshold fitted to a
-  single positive example is weakly determined, and we do not claim otherwise.
+ single positive example is weakly determined, and we do not claim otherwise.
 
 **It also cannot distinguish leakage from covariate shift.** Calibration
 demonstrated this directly: `dur_rank_in_list` drifts at 0.268 for a legitimate
-reason — it is a duration percentile computed *within* a user's list, and a
+reason; it is a duration percentile computed *within* a user's list, and a
 percentile over 43.5 rows is not the same quantity as one over 5.6. That is the
 group-shape mismatch surfacing in the feature distribution, not a leak. The
 0.25 warn band exists to make such cases visible rather than to adjudicate
@@ -183,7 +183,7 @@ gross leak was detected by a single-statistic test with one calibration point.
 Any new feature family that aggregates outcomes still requires the mechanical
 argument for why it cannot see its own row.
 
-## 9. Convergence rule — an ambiguity, our reading, and the disclosure
+## 9. Convergence rule; an ambiguity, our reading, and the disclosure
 
 Recorded **before** the scored run. We disclose this rather than quietly benefit
 from it.
@@ -192,11 +192,11 @@ from it.
 
 We checked. There is **no convergence code anywhere in the starter kit**:
 
-- `baseline_scores.json` carries only `{"epsilon": 0.002, "N": 3}` — two numbers.
+- `baseline_scores.json` carries only `{"epsilon": 0.002, "N": 3}`; two numbers.
 - `evaluate.py` is purely metrics; it has no notion of iterations at all.
 - `baseline.py` has `patience=4` and an `eps`, but those are FM epoch
-  early-stopping and Adam's numerical epsilon — different mechanisms entirely,
-  not the agent-loop rule.
+ early-stopping and Adam's numerical epsilon, different mechanisms entirely,
+ not the agent-loop rule.
 - The only prose is `README.md:72–73`.
 
 ### The prose is ambiguous, in Chinese as in English
@@ -206,8 +206,8 @@ We checked. There is **no convergence code anywhere in the starter kit**:
 Literally: "3 consecutive rounds of iteration [in which] validation primary
 improvement does not exceed 0.002 → judged converged." 提升 ("improvement") is
 unquantified as to whether it is *per round* or *cumulative across the three*.
-The English in the task brief — "has not improved by more than eps over the last
-3 consecutive iterations" — carries the same two readings. This is not a
+The English in the task brief, "has not improved by more than eps over the last
+3 consecutive iterations", carries the same two readings. This is not a
 translation artifact; the ambiguity is in the original.
 
 | reading | test | behaviour |
@@ -220,14 +220,14 @@ translation artifact; the ambiguity is in the original.
 **We run the window reading.** Reasons, in order:
 
 1. It is the more natural reading of "improved by more than eps **over the last
-   N iterations**" — the phrase attaches the threshold to the span, not to each
-   element of it. The per-iteration reading needs "in **each** of the last N".
+ N iterations**"; the phrase attaches the threshold to the span, not to each
+ element of it. The per-iteration reading needs "in **each** of the last N".
 2. The per-iteration reading makes N nearly inoperative. If every single
-   iteration must clear eps on its own, the rule is "stop after 3 iterations
-   that each individually failed to clear eps," and N is doing little work
-   beyond a retry count.
+ iteration must clear eps on its own, the rule is "stop after 3 iterations
+ that each individually failed to clear eps," and N is doing little work
+ beyond a retry count.
 3. It is measured against a 3-seed mean (§6), so seed noise cannot manufacture
-   the accumulation.
+ the accumulation.
 
 **Disclosure.** The per-iteration reading is computed in parallel every run and
 the iteration at which it *would* have fired is logged as
@@ -240,7 +240,7 @@ our own logs without rerunning anything.
 is close to the entire attainable headroom we measured in Phase 1 (~0.0025), so
 no sequence of genuine incremental gains can prevent convergence and only a
 single large jump can. That is a property of the benchmark and is reported on
-its own merits whichever reading is correct — it is not our argument for
+its own merits whichever reading is correct; it is not our argument for
 choosing the window reading, which rests on the grammar and on point 2 above.
 
 ## 10. Iteration 0 does not start the stall counter
@@ -255,7 +255,7 @@ stopped moving.
 Consequence: the first three *experiment* iterations form the first convergence
 window, rather than the baseline consuming one of the three slots.
 
-## 11. Clarification of §6 — designation, disambiguated and made executable
+## 11. Clarification of §6, designation, disambiguated and made executable
 
 **Timestamped 2026-08-30T15:03:29Z (UTC). Written before any scored run has been started;
 none has.** This clarifies a clause that was internally ambiguous as written,
@@ -267,16 +267,16 @@ repaired.
 §6 contains two clauses that can conflict:
 
 - *"If the best-valid config and the most-structurally-justified config diverge,
-  the structurally-justified config is designated"* — reads **unconditional**.
-- *"Ties (within 1 seed std) resolve to the structurally-justified config"* —
-  implies a **band**, and would be redundant if the first clause were truly
-  unconditional.
+ the structurally-justified config is designated"*, reads **unconditional**.
+- *"Ties (within 1 seed std) resolve to the structurally-justified config"*,
+ implies a **band**, and would be redundant if the first clause were truly
+ unconditional.
 
 Read together they do not determine what happens when the structural config is
 worse by a wide margin. Taken literally, the first clause would designate a
 structural config that lost by 0.05, which no one intended.
 
-### The resolution — the conjunction
+### The resolution; the conjunction
 
 **Structural is designated when it diverges from best-valid AND is within one
 seed standard deviation of it. Beyond that band, best-valid is designated and
@@ -296,7 +296,7 @@ alongside, so the alternative is reconstructable.
 
 A config counts as **structurally justified** when the iteration that produced
 it cited at least one of `GROUP_SHAPE_MISMATCH`, `POINTWISE_BASELINE`,
-`USER_CONSTANT_NO_EFFECT`, `WITHIN_USER_RANKING` — the fact keys naming a
+`USER_CONSTANT_NO_EFFECT`, `WITHIN_USER_RANKING`; the fact keys naming a
 train/eval mismatch or a property of the metric's form, as opposed to a
 parameter choice or a feature hunch.
 
@@ -309,27 +309,27 @@ most consequential decision of the run an **unlogged manual intervention**. Our
 zero-intervention claim was true of the loop and not true of the submission.
 
 The rule is now executed in code. **There is no path where a human silently
-decides**: if the rule cannot resolve a case — for example, no iteration cited a
-structural fact — `record_intervention()` fires, the intervention counter
+decides**: if the rule cannot resolve a case, for example, no iteration cited a
+structural fact, `record_intervention()` fires, the intervention counter
 increments, and the reason says so. A run that needs a human to pick the
 submission will report a non-zero intervention count, which is the honest
 outcome.
 
 ### What a null result here means
 
-If the designation record shows **no divergence** — the best-valid config is
-also the structurally-justified one — that is not a wasted mechanism. It is the
+If the designation record shows **no divergence**; the best-valid config is
+also the structurally-justified one; that is not a wasted mechanism. It is the
 useful output: the rule was executed and demonstrated rather than asserted, and
 the record proves the two criteria agreed rather than leaving us to claim they
 would have.
 
-## 12. Policy audit — which clauses are executable, which are promises
+## 12. Policy audit, which clauses are executable, which are promises
 
 Prompted by the §6 gap. Every clause in this document is classified below as
 **CODE** (a mechanism enforces it, and a test proves the mechanism fires) or
 **PROMISE** (a human keeps it; nothing in the harness can compel it). The
 distinction matters because a promise written in the grammar of a mechanism is
-worse than an honest promise — it invites everyone, us included, to believe
+worse than an honest promise; it invites everyone, us included, to believe
 something is guaranteed when it is not.
 
 | § | Clause | Status | Mechanism / test |
@@ -341,7 +341,7 @@ something is guaranteed when it is not.
 | 1 | The test result cannot change the submission | **CODE** *(was PROMISE; mechanized §14)* | `--lock` fingerprints the submission before scoring; hash mismatch refused |
 | 2 | Diagnostic clipped to the valid window | **CODE** | `diagnostics.load_unbiased_diag` asserts `max_date <= VALID_END` |
 | 2 | Diagnostic never trained on | **CODE** | loader never includes it in train |
-| 2 | Diagnostic never in selection or convergence | **CODE (by construction)** | no decision path reads `DIAG_*`; not separately asserted — see gap 4 |
+| 2 | Diagnostic never in selection or convergence | **CODE (by construction)** | no decision path reads `DIAG_*`; not separately asserted, see gap 4 |
 | 3 | `evaluate.py` is the only scorer, never LightGBM ndcg | **CODE** | `metrics.score` wraps it; `metric='None'`; stopper calls `metrics.score` |
 | 4 | Same-row outcome columns dropped at load | **CODE** | `firewall.assert_no_deny_columns`; tested |
 | 4 | `is_rand` excluded | **CODE** | `DEAD_COLUMNS`, dropped in `_to_split` |
@@ -369,22 +369,22 @@ But the audit did surface three weaker spots that were previously unstated. None
 is a policy/code contradiction; all three are promises that read stronger than
 they are, and they are recorded here rather than left implicit.
 
-**Gap 2 — "test scored exactly once" was unenforced. NOW MECHANIZED (§14).**
+**Gap 2, "test scored exactly once" was unenforced. NOW MECHANIZED (§14).**
 
-**Gap 3 — "the test result cannot change the submission" was unenforceable as
+**Gap 3, "the test result cannot change the submission" was unenforceable as
 written. NOW MECHANIZED IN THE FORM THAT MATTERS (§14):** the submission is
 fingerprinted before the score is known, and a changed file is refused.
 
-**Gap 4 — the diagnostic's exclusion from selection is true by construction, not
+**Gap 4; the diagnostic's exclusion from selection is true by construction, not
 by assertion.** No decision path reads `DIAG_*` keys, but nothing fails if a
 future edit introduces one. *Mechanizable:* assert that decision inputs contain
 no `DIAG_`-prefixed key. Low risk today, cheap insurance later.
 
-**Gap 5 — the intervention counter depends on being called.** `record_intervention()`
+**Gap 5; the intervention counter depends on being called.** `record_intervention()`
 now fires on the one decision the harness makes that could otherwise be silent,
 but a human who edits state mid-run is not detected. This is irreducible: the
-counter measures honesty, it cannot manufacture it. What the harness can do — and
-now does — is ensure the *agent loop itself* contains no unlogged human decision
+counter measures honesty, it cannot manufacture it. What the harness can do; and
+now does, is ensure the *agent loop itself* contains no unlogged human decision
 point.
 
 ## 13. Iteration 0 is not a designation candidate
@@ -394,15 +394,15 @@ Added after a dev run exposed the omission in §11's implementation.
 **Rule.** The designation candidate pool contains **experiment iterations only**.
 Iteration 0 reproduces the official baseline as a correctness precondition; it is
 not an attempt to improve on anything, and it is not eligible to be designated.
-This is the same principle §10 already applies to the stall counter — only
-iterations that ran an experiment are treated as evidence — extended to the
+This is the same principle §10 already applies to the stall counter; only
+iterations that ran an experiment are treated as evidence, extended to the
 decision that selects the submission.
 
 **What went wrong without it.** In a dev run where no experiment beat the
 baseline, best-valid resolved to iteration 0 (the FM baseline itself, 0.60141).
 The §6 within-band clause then compared it against a structural candidate at
 0.60086, found the gap of 0.00055 inside the 0.0008 band, and designated the
-**structural config — which scored below the baseline it exists to beat.** The
+**structural config, which scored below the baseline it exists to beat.** The
 rule was executing exactly as written and produced a submission worse than doing
 nothing.
 
@@ -424,7 +424,7 @@ it, because the policy text did not mention iteration 0 either.
 
 Both clauses in §1 that the §12 audit found to be PROMISE are now CODE. These
 were the ones a judge could reasonably doubt, because **the test labels are
-sitting on our disk** — the discipline was self-imposed and, until now, only
+sitting on our disk**; the discipline was self-imposed and, until now, only
 self-attested.
 
 **`--lock`** fingerprints the designated submission: SHA-256, byte size, row
@@ -444,15 +444,15 @@ any deviation requires a deliberate destructive act rather than an oversight,
 and that both files are committed to git so a deviation is visible in history.
 
 **Deliberately left as a PROMISE:** the diagnostic's exclusion from selection
-(§2). It is true by construction — no decision path reads `DIAG_*` — and adding
+(§2). It is true by construction; no decision path reads `DIAG_*`; and adding
 an assertion would guard against a hypothetical future edit rather than any
 present risk. It stays labelled honestly rather than dressed up.
 
 ## 15. Liveness condition
 
 "An API failure must never kill the run" is a **safety** property. Composed with
-"iterations that ran no experiment are not evidence about saturation" — also
-correct — it removed every condition under which a stalled run could stop for a
+"iterations that ran no experiment are not evidence about saturation", also
+correct; it removed every condition under which a stalled run could stop for a
 good reason. A run exhausted its API credits and passed all 50 iterations in 54
 seconds, reporting itself converged.
 

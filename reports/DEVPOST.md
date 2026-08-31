@@ -1,4 +1,4 @@
-# Devpost submission — An autonomous ML research agent for RecSys
+# Devpost submission: an autonomous ML research agent for RecSys
 
 **Repo:** https://github.com/heyitsjshere/techjam26
 
@@ -12,7 +12,7 @@ that nearly impossible to demonstrate, and the clearest evidence is a single run
 of our own agent.
 
 **In one run the agent improved its validation score on three consecutive
-iterations — monotonically, with no wasted move — accumulating +0.00197 against
+iterations, monotonically, with no wasted move, accumulating +0.00197 against
 a convergence threshold of 0.002. It was stopped for *insufficient progress*,
 0.00003 short. That is about one tenth of its own seed standard deviation.**
 
@@ -27,15 +27,15 @@ actually contains.
 
 An LLM-driven agent that reproduces the official baseline, forms its own
 hypotheses about where signal might be, emits structured experiment specs, and
-learns from the measured results — with **zero human interventions** during the
+learns from the measured results, with **zero human interventions** during the
 scored run.
 
 | | GAUC | nDCG@5 | primary | delta |
 |---|---|---|---|---|
-| Official FM — validation | 0.6674 | 0.5357 | 0.6016 | — |
-| **Agent — validation** | 0.6704 | 0.5378 | **0.60209** | **+0.00049** |
-| Official FM — test | 0.6610 | 0.5282 | 0.5946 | — |
-| **Agent — test** (scored once) | 0.6610 | 0.5286 | **0.5948** | **+0.0002** |
+| Official FM (validation) | 0.6674 | 0.5357 | 0.6016 | |
+| **Agent (validation)** | 0.6704 | 0.5378 | **0.60209** | **+0.00049** |
+| Official FM (test) | 0.6610 | 0.5282 | 0.5946 | |
+| **Agent (test)** (scored once) | 0.6610 | 0.5286 | **0.5948** | **+0.0002** |
 
 **4 iterations of 50 · 0 manual interventions · 50,946 tokens · 7.4 min · 0 GPU-hours**
 
@@ -51,8 +51,8 @@ harness executes it. The agent never rewrites the pipeline, which is what keeps 
 full autonomous run at ~51k tokens and 7.4 minutes.
 
 **A seeding boundary we can prove.** Before the agent existed we ran a manual
-probe of 79 controlled experiments. The agent inherits the *action space* —
-every move, including all the ones we measured as dead ends — and a *domain
+probe of 79 controlled experiments. The agent inherits the *action space*
+(every move, including all the ones we measured as dead ends) and a *domain
 briefing* of structural facts. It inherits **no** measured delta, **no** verdict,
 and **not** the final config. 72 automated assertions enforce that boundary, so
 it cannot erode on a later edit. In every run the agent independently derived
@@ -74,7 +74,9 @@ attempts and disclosed it rather than quietly fixing it.
 
 ## How we built it
 
-Python 3.13, LightGBM, numpy, pandas, scikit-learn. CPU only — no GPU, no torch.
+![How the agent differs from a human MLE](figures/pipeline.svg)
+
+Python 3.13, LightGBM, numpy, pandas, scikit-learn. CPU only; no GPU, no torch.
 The proposer is `claude-opus-5` via the Anthropic Messages API, with adaptive
 thinking and structured outputs so a malformed proposal is impossible by
 construction rather than caught by a parser.
@@ -83,14 +85,14 @@ construction rather than caught by a parser.
 
 **The benchmark is saturated, and we proved it three independent ways.** The
 organizers' own ablations show more features and more capacity are both flat.
-Swapping the model family entirely moves nothing — a pointwise GBDT scores 0.6017
+Swapping the model family entirely moves nothing; a pointwise GBDT scores 0.6017
 against the FM's 0.6016. And a collaborative-filtering feature *hurts* validation
 while consistently *helping* on randomised-exposure traffic, because validation
 impressions were already preference-matched by a strong production recommender.
 We are re-ranking a candidate set that a better-informed system already filtered.
 
 **Four bugs were found only by running the real system**, never by tests written
-from the specification. A duplicated `group_sizes` killed every chunked spec —
+from the specification. A duplicated `group_sizes` killed every chunked spec,
 unit tests and a full stub run both passed, because the stub never ranked a
 chunked candidate first. A designation rule, correctly specified and faithfully
 implemented, designated a config *worse than the baseline*, because the policy
@@ -109,7 +111,7 @@ every discarded attempt.
 
 ## What we learned
 
-**A pre-registered rule that is not executable is not pre-registration** — it is
+**A pre-registered rule that is not executable is not pre-registration**; it is
 an unlogged manual intervention in policy language. Ours returned the wrong
 answer and deferred the real decision to "a human at designation review."
 
@@ -131,7 +133,7 @@ Aggregates keyed on cold items, where the ID categoricals cannot already fit a
 per-item effect. Real session boundaries instead of chunking by row count. And an
 explicit argument to the organizers about the eps-to-headroom ratio: at 0.002
 against ~0.0025 of attainable headroom, the rule selects for agents that guess a
-whole configuration in one shot over agents that isolate variables — which is the
+whole configuration in one shot over agents that isolate variables, which is the
 opposite of what the track is trying to reward.
 
 ---
@@ -141,7 +143,7 @@ opposite of what the track is trying to reward.
 **Languages / libraries:** Python 3.13 · LightGBM 4.7 · NumPy 2.5 · pandas 3.0 ·
 scikit-learn 1.9 · SciPy 1.18 · Pydantic 2.13
 
-**APIs:** Anthropic Messages API — model `claude-opus-5`, adaptive thinking,
+**APIs:** Anthropic Messages API, model `claude-opus-5`, adaptive thinking,
 structured outputs, streaming
 
 **Tools:** Claude Code (development) · git / GitHub · uv · Homebrew (`libomp`)

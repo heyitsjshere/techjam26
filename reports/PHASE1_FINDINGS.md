@@ -1,4 +1,4 @@
-# Phase 1 — manual ceiling probe: findings
+# Phase 1, manual ceiling probe: findings
 
 79 logged experiments, ~26 min total train time, all scored by the organizers'
 `evaluate.py` on **valid only**. Full record: `reports/phase1_log.jsonl`.
@@ -12,14 +12,14 @@
 | std over 5 seeds | 0.0004 | 0.0004 | 0.0004 |
 
 **Isolated delta over FM: +0.0025 ± 0.0004.** Best single seed was 0.6046
-(+0.0030) and is reported here only to be discarded — with a seed std of 0.0004
+(+0.0030) and is reported here only to be discarded, with a seed std of 0.0004
 and 79 experiments selected on valid, quoting the best seed would be quoting
 selection noise.
 
 Locked config: `rank_xendcg`, train groups chunked to 6, features
 `base5 + duration_ms + dur_feats`. That is 8 features and no aggregates.
 
-## Isolated deltas — the seeded action space
+## Isolated deltas; the seeded action space
 
 Each row changes exactly one thing from the row it references.
 
@@ -27,7 +27,7 @@ Each row changes exactly one thing from the row it references.
 |---|---|---|---|---|
 | 1 | LightGBM `lambdarank`, group=user (vs FM) | 0.5988 | −0.0028 | **worse than FM** |
 | 1b | LightGBM `binary`, same features (control) | 0.6022 | +0.0006 | model class ≈ nil |
-| — | ⇒ objective delta, model held fixed | | **−0.0034** | pairwise ranking *hurts* |
+| | ⇒ objective delta, model held fixed | | **−0.0034** | pairwise ranking *hurts* |
 | 2 | chunk train groups 43.5 → 20 / 10 / 7 / 6 / 4 rows | 0.6003–0.6021 | **+0.0033** | **real, largest single lever** |
 | 3 | `lambdarank_truncation_level` 5…30 | 0.6017–0.6022 | ±0.0005 | no effect (lists ≤ 6) |
 | 3 | `rank_xendcg` (listwise) vs `binary` | 0.6044 | **+0.0022** | **real** |
@@ -54,7 +54,7 @@ are cut to the size of evaluation lists. Its gradient is built from pairs
 weighted by an NDCG position discount over the training list; at 43.5 rows per
 group it spends that gradient on ranks 7–43, which no evaluation list ever has.
 `rank_xendcg` optimises a listwise softmax with no position discount, so it is
-far less sensitive to list length — and it is the only objective that beat
+far less sensitive to list length; and it is the only objective that beat
 pointwise. Truncation level was irrelevant because chunking had already made
 every list ≤ 6, which is the honest reading: **the truncation fix and the
 chunking fix are the same fix**, and chunking is the one that generalises.
@@ -68,7 +68,7 @@ parameter per video from the same labels the aggregate averages; the aggregate
 is a lossy compression of what the model already has. Adding it contributes
 noise and a leakage channel. Dropping the IDs and keeping only aggregates costs
 −0.0189, confirming the direction of subsumption. So aggregates are only worth
-anything on keys the model *cannot* fit directly — which on this dataset is
+anything on keys the model *cannot* fit directly, which on this dataset is
 nothing, because 99.8% of eval videos appear in train.
 
 **Why user-level rates are worse than useless (step 7, decisive).** Ranking is
@@ -91,16 +91,16 @@ by the metric. Both would have poisoned the agent's knowledge base with a false
 feature verdict.
 
 1. **Naive train-window aggregates leak.** An aggregate fitted on train and
-   applied back to train rows contains that row's own outcome. `ua_affinity` had
-   train mean 0.0149 vs valid 0.0003 — a ~50× collapse — and the model fell to
-   0.4866 primary, near random. Recorded initially as "cross features are
-   catastrophic"; that verdict was **wrong** and was retracted.
+ applied back to train rows contains that row's own outcome. `ua_affinity` had
+ train mean 0.0149 vs valid 0.0003; a ~50× collapse; and the model fell to
+ 0.4866 primary, near random. Recorded initially as "cross features are
+ catastrophic"; that verdict was **wrong** and was retracted.
 2. **Leave-one-out is a worse fix than the bug.** Subtracting the row's own
-   contribution removes self-inclusion but substitutes an offset of
-   −1/(count+prior) that is a deterministic function of the row's own label. A
-   deep enough tree learns "slightly lower rate ⇒ positive," which is inverted
-   at evaluation time. Measured at **−0.0137** against naive. Out-of-fold
-   encoding has neither defect and matches naive.
+ contribution removes self-inclusion but substitutes an offset of
+ −1/(count+prior) that is a deterministic function of the row's own label. A
+ deep enough tree learns "slightly lower rate ⇒ positive," which is inverted
+ at evaluation time. Measured at **−0.0137** against naive. Out-of-fold
+ encoding has neither defect and matches naive.
 
 **Rule for the agent:** any target encoding must be out-of-fold. Leave-one-out
 is banned. Every new feature is drift-checked (train mean vs valid mean) before
@@ -108,9 +108,9 @@ its metric is believed.
 
 ## The CF result, and why the diagnostic earned its keep
 
-Collaborative filtering over the train-window long-view matrix — the organizers'
+Collaborative filtering over the train-window long-view matrix; the organizers'
 "completely blank" direction #2, the one thing not subsumed by `video_id`
-because it is personalised *and* varies within a list — **hurts valid under all
+because it is personalised *and* varies within a list, **hurts valid under all
 three encodings** (−0.0138 to −0.0412), so it is rejected.
 
 But it **raises the unbiased-exposure diagnostic every single time**, from 0.3664
@@ -144,20 +144,20 @@ The realistic band is **+0.002 to +0.005**, and +0.0025 is already ~6σ against 
 0.0004 seed std. Two implications for Phase 2, both in our favour:
 
 - The **Feasibility gate** (hidden-test primary > baseline) is what matters, and
-  +0.0025 on valid clears it with margin if it transfers. Transfer is the risk,
-  not headroom.
+ +0.0025 on valid clears it with margin if it transfers. Transfer is the risk,
+ not headroom.
 - Since the model is saturated, **agent build quality is the whole remaining
-  score**. Innovation (20%), Autonomy (20%) and robustness inside Technical
-  Execution (35%) are where the points are. Grinding the model further is
-  negative expected value.
+ score**. Innovation (20%), Autonomy (20%) and robustness inside Technical
+ Execution (35%) are where the points are. Grinding the model further is
+ negative expected value.
 
 ## What the agent inherits
 
 **Tier A action space, ordered by measured value:**
-1. `objective` ∈ {`rank_xendcg` (best), `binary`, `lambdarank`} — measured spread 0.0034
-2. `group_chunk` ∈ {4, 6, 7, 10, 20, none} — measured spread 0.0036
-3. feature blocks ∈ {`base5`, `duration`, `dur_feats`} — the live set
-4. hyperparameters — 7 axes, all measured flat; **low priority, not the first move**
+1. `objective` ∈ {`rank_xendcg` (best), `binary`, `lambdarank`}, measured spread 0.0034
+2. `group_chunk` ∈ {4, 6, 7, 10, 20, none}, measured spread 0.0036
+3. feature blocks ∈ {`base5`, `duration`, `dur_feats`}; the live set
+4. hyperparameters, 7 axes, all measured flat; **low priority, not the first move**
 
 **Dead moves, recorded with reasons so the agent does not re-derive them:**
 `item_agg`, `cross_agg`, `user_agg`, `cf`, recency weighting, train truncation,
@@ -170,11 +170,11 @@ accepted as an improvement.
 
 ---
 
-# Addendum — closing the delta arithmetic (Item 1)
+# Addendum, closing the delta arithmetic (Item 1)
 
 The Phase 1 marginals above (+0.0033 chunking, +0.0022 `rank_xendcg`) summed to
 +0.0055 against a measured +0.0025. **Both marginals were single-seed**, against
-a seed std of 0.0004, and worse, they were measured from **different origins** —
+a seed std of 0.0004, and worse, they were measured from **different origins**,
 chunking from `lambdarank`/no-chunk (0.5988), `rank_xendcg` from `binary`/chunk=6
 (0.6022). Neither origin was FM, so the two were never additive to begin with.
 
@@ -194,16 +194,16 @@ objective). Official FM 0.6016.
 ## Resolution
 
 - **Interaction = +0.0008.** The two moves are mildly *synergistic*, not
-  independent: chunking is worth more under the listwise loss (+0.0032) than
-  under the pairwise one (+0.0024). Recording two independent marginals would
-  have mis-stated this in both directions.
+ independent: chunking is worth more under the listwise loss (+0.0032) than
+ under the pairwise one (+0.0024). Recording two independent marginals would
+ have mis-stated this in both directions.
 - **Sum of marginals from the `lambdarank`/None corner = +0.0039; actual joint
-  effect = +0.0046.** From a common origin the marginals *undershoot* the joint
-  by the interaction term. The original +0.0055 was not this arithmetic at all.
+ effect = +0.0046.** From a common origin the marginals *undershoot* the joint
+ by the interaction term. The original +0.0055 was not this arithmetic at all.
 - **The real source of the gap: the `lambdarank`/no-chunk corner sits 0.0022
-  BELOW FM.** The joint move is worth +0.0046 measured from that corner, but
-  0.0022 of it is spent climbing back to the baseline. Net versus FM:
-  +0.0046 − 0.0022 = **+0.0024**, which is the measured +0.0025 within noise.
+ BELOW FM.** The joint move is worth +0.0046 measured from that corner, but
+ 0.0022 of it is spent climbing back to the baseline. Net versus FM:
+ +0.0046 − 0.0022 = **+0.0024**, which is the measured +0.0025 within noise.
 
 Single-seed inflation accounts for the rest: the chunking marginal drops from
 +0.0033 to +0.0024 at 5 seeds.

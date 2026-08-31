@@ -1,4 +1,4 @@
-# Phase 2 harness — design for review
+# Phase 2 harness, design for review
 
 Nothing here has been run as an agent dev run. Guards and plumbing are tested;
 the loop itself is unexercised pending review of the seeding boundary and the
@@ -20,10 +20,10 @@ expected-gain ranking.
 | `agent/proposer.py` | LLM interface; candidate contract |
 | `agent/controller.py` | gain-ranked scheduling, convergence, recovery |
 
-## Guard 1 — out-of-fold only, unreachable not discouraged
+## Guard 1, out-of-fold only, unreachable not discouraged
 
 `guards.check_encoding` is called from **inside** `_Encoder.encode`, so it fires
-regardless of caller — including agent-written Tier B code that bypasses the
+regardless of caller, including agent-written Tier B code that bypasses the
 spec schema. In `agent_mode()` anything but `'oof'` raises `GuardViolation`,
 which the controller never retries. The Tier A schema has no `encoding` field
 and `validate()` rejects a spec that carries one.
@@ -31,7 +31,7 @@ and `validate()` rejects a spec that carries one.
 Verified: `loo` and `naive` both raise in agent mode; `oof` works; schema
 rejects an encoding field.
 
-## Guard 2 — mandatory drift check, before the metric exists
+## Guard 2, mandatory drift check, before the metric exists
 
 Order in `Executor.run` is: build features → **drift check** → *only if passed*
 train → score. A failing block returns `{ok: False, rejected_by: 'drift_check',
@@ -50,22 +50,22 @@ guessed:
 | `dur_rank_in_list` | 0.268 | **covariate shift, not leakage** |
 | `cross_agg` (naive) | **0.769** | known leak from Phase 1 |
 
-> **Limitation — read this before trusting a drift pass.** The drift check is a
+> **Limitation, read this before trusting a drift pass.** The drift check is a
 > **backstop, not the primary defence.** The primary defence is out-of-fold
 > encoding enforced at the code level (Guard 1), which makes leakage structurally
 > impossible for aggregate features. The drift check covers only what Guard 1
 > does not mediate: a new feature family that leaks by some other route.
 >
-> Its calibration band is narrow — 0.049–0.268 legitimate, 0.769 for the one
+> Its calibration band is narrow, 0.049–0.268 legitimate, 0.769 for the one
 > known leak, and **exactly one known-positive point**. Rejecting at 0.40
 > catches gross leakage of the magnitude Phase 1 produced, but **would miss a
 > subtle leak around 0.35**, and would almost certainly miss one below 0.27,
 > which is inside the legitimate range. It also cannot distinguish leakage from
-> covariate shift — `dur_rank_in_list` at 0.268 is the latter. A drift pass is
+> covariate shift, `dur_rank_in_list` at 0.268 is the latter. A drift pass is
 > not evidence a feature is sound; it means no gross leak was detected by a
 > single-statistic test with one calibration point.
 
-Reject at **0.40** — 1.5× above the highest legitimate block, 1.9× below the
+Reject at **0.40**, 1.5× above the highest legitimate block, 1.9× below the
 known leak. A **warn band at 0.25** exists because calibration surfaced a real
 distinction: `dur_rank_in_list` is a duration percentile *within a user's list*,
 and a percentile over 43.5 rows is not the same quantity as one over 5.6. That
@@ -98,14 +98,14 @@ iteration and reason, git commit.
 
 ## Seeding boundary
 
-**Inherits — the full action space** (`actionspace.py`): both model families,
+**Inherits; the full action space** (`actionspace.py`): both model families,
 all three objectives, all six group-chunk values, all seven feature blocks
 including `item_agg`, `user_agg`, `cross_agg` and `cf`, the full parameter grid,
 train shaping, ensembling. Every move Phase 1 found dead is present and
 selectable. Descriptions state what an action *does* and what it *costs*, never
 what it is worth.
 
-**Inherits — the domain briefing** (`briefing.py`): metric form and within-user
+**Inherits; the domain briefing** (`briefing.py`): metric form and within-user
 ranking; the consequence that a user-constant quantity cannot reorder a list;
 ~0.31 positive rate; baseline is pointwise FM at 0.6016; the 0.8484 ceiling;
 train 43.5 rows/user vs valid 5.6, with medians and p90; the ~6-item list
@@ -114,7 +114,7 @@ organizers' README measurements including their two dead ends and their own
 list of unexplored directions; and the CF-vs-diagnostic divergence **stated as
 an observation with no interpretation attached**.
 
-**Inherits — the two hard guards**, with the reasoning for each.
+**Inherits; the two hard guards**, with the reasoning for each.
 
 **Does NOT inherit:** any measured delta from Phase 1; the finding that group
 chunking and `rank_xendcg` are the two moves that pay; the 2×2 interaction; the
@@ -124,25 +124,25 @@ in the action space only as a parameter with a neutral description.
 The file headers state this boundary explicitly so it is not eroded by a later
 edit.
 
-## Expected-gain ranking — derived, not hardcoded
+## Expected-gain ranking, derived, not hardcoded
 
 The controller has **no opinion** about which move is structural. It sorts
 candidates purely by the proposer's own `expected_gain`. The mechanism that
 makes that number mean something:
 
 - Every candidate must supply `expected_gain_derivation` citing ≥1 fact key
-  (e.g. `[GROUP_SHAPE_MISMATCH]`, `[POINTWISE_BASELINE]`). Fact keys are labels
-  for briefing content, nothing more.
+ (e.g. `[GROUP_SHAPE_MISMATCH]`, `[POINTWISE_BASELINE]`). Fact keys are labels
+ for briefing content, nothing more.
 - A candidate citing no fact still executes if it ranks, but its gain is
-  discounted by 0.5 and the discount is recorded. Rationale: an expected gain
-  with no derivation is an assertion, not a prediction.
+ discounted by 0.5 and the discount is recorded. Rationale: an expected gain
+ with no derivation is an assertion, not a prediction.
 - The controller never ranks by *which* fact is cited. Whether the group-shape
-  mismatch outranks feature work is the agent's call, made from the briefing,
-  and visible in the log either way.
+ mismatch outranks feature work is the agent's call, made from the briefing,
+ and visible in the log either way.
 
 ## Convergence
 
-**The starter kit pins the constants, not the implementation** — there is no
+**The starter kit pins the constants, not the implementation**; there is no
 convergence code in it anywhere, and the only prose (`README.md:72–73`) is
 ambiguous in the original Chinese exactly as in English. We run the **window**
 reading, `best(t) − best(t−3) ≤ 0.002`, and compute the **per-iteration**
@@ -152,12 +152,12 @@ every iteration record. Full reasoning and disclosure: POLICY.md §9.
 **Every spec is evaluated at 3 seeds** (POLICY.md §6). Selection, convergence
 and designation all use the mean; the std is logged. Seed std is ~0.0008 and
 real deltas here are the same order, so single-seed selection could not
-separate signal from noise — and designating a single-seed checkpoint would
+separate signal from noise; and designating a single-seed checkpoint would
 have violated our own pre-registration.
 
 **Iteration 0 seeds best-so-far and the convergence window but does not start
 the stall counter** (POLICY.md §10). It is a correctness precondition, not an
-improvement attempt — the same principle already applied to proposal failures.
+improvement attempt; the same principle already applied to proposal failures.
 The first three *experiment* iterations therefore form the first window.
 
 ## Convergence hazard
@@ -166,13 +166,13 @@ Measured against **best-so-far** so a flat iteration after a real gain does not
 reset progress to the previous iteration's value. Three mechanisms address the hazard without
 hardcoding an ordering:
 
-1. Expected-gain ordering, above — derived by the proposer, logged with its
-   derivation.
-2. **Forced high-variance move at `stall == 2`** — one iteration before the run
-   would end, the proposer is told marginal variations are not acceptable and
-   must propose the most different thing it can justify. This is the gain-aware
-   scheduling in brief §6.5 and is the direct counter to converging on a poor
-   opening move.
+1. Expected-gain ordering, above, derived by the proposer, logged with its
+ derivation.
+2. **Forced high-variance move at `stall == 2`**; one iteration before the run
+ would end, the proposer is told marginal variations are not acceptable and
+ must propose the most different thing it can justify. This is the gain-aware
+ scheduling in brief §6.5 and is the direct counter to converging on a poor
+ opening move.
 3. Best-so-far accounting, above.
 
 The run is not padded and no minimum-iteration floor is imposed, because that
@@ -190,12 +190,12 @@ kit's `data.load()`, which reads the test window.
 ## Recovery
 
 - `GuardViolation` is never retried; the run halts. A hard guard firing means a
-  correctness assumption is broken.
+ correctness assumption is broken.
 - Any other exception retries up to 2 times with the error text fed back to the
-  proposer; after 2 failures the action key is marked dead and the controller
-  routes to the next candidate.
+ proposer; after 2 failures the action key is marked dead and the controller
+ routes to the next candidate.
 - Proposal parse failures are logged as an iteration with `error` set and the
-  loop continues.
+ loop continues.
 - Best-so-far checkpoint is what gets designated, never the last iteration.
 
 ## Proposer backend
@@ -206,28 +206,28 @@ iteration record (`proposer_model`) and into the run summary, since Devpost
 requires an APIs-used field.
 
 - **Key handling.** Read from `os.environ['ANTHROPIC_API_KEY']` only. Never
-  hardcoded, never logged, never written to a file, never passed as an argument,
-  never read back or printed. Absent ⇒ immediate failure with an actionable
-  message, before any request is made. `.env` and `.env.*` are gitignored.
+ hardcoded, never logged, never written to a file, never passed as an argument,
+ never read back or printed. Absent ⇒ immediate failure with an actionable
+ message, before any request is made. `.env` and `.env.*` are gitignored.
 - **Structured output.** The slate is produced through `client.messages.parse()`
-  against a Pydantic schema, so a malformed proposal is impossible by
-  construction rather than caught by a parser. An unattended scored run cannot
-  afford to lose iterations to JSON formatting.
+ against a Pydantic schema, so a malformed proposal is impossible by
+ construction rather than caught by a parser. An unattended scored run cannot
+ afford to lose iterations to JSON formatting.
 - **Retry.** SDK retries are **disabled** (`max_retries=0`) so ours are the only
-  ones and every attempt is visible. Up to 3 attempts, exponential backoff from
-  2s with jitter, honouring `retry-after` on 429. Retryable: 429, 5xx/529, and
-  connection errors. **Not** retryable: 400/401/403/404 — bugs or config
-  problems that will not fix themselves. After 3 attempts the controller logs
-  the failure and requests a fresh slate next iteration; **an API failure never
-  kills the run**. Every attempt is written to `api_recovery` in the iteration
-  record.
+ ones and every attempt is visible. Up to 3 attempts, exponential backoff from
+ 2s with jitter, honouring `retry-after` on 429. Retryable: 429, 5xx/529, and
+ connection errors. **Not** retryable: 400/401/403/404, bugs or config
+ problems that will not fix themselves. After 3 attempts the controller logs
+ the failure and requests a fresh slate next iteration; **an API failure never
+ kills the run**. Every attempt is written to `api_recovery` in the iteration
+ record.
 - **Refusal.** `stop_reason == "refusal"` is treated as a proposal failure and
-  routed through the same path. Server-side fallbacks are **not** enabled — it
-  would add a beta-header failure mode to an unattended run for a case
-  (a refusal on an ML experiment-design prompt) that is vanishingly unlikely.
-  Easy to add if you disagree.
+ routed through the same path. Server-side fallbacks are **not** enabled; it
+ would add a beta-header failure mode to an unattended run for a case
+ (a refusal on an ML experiment-design prompt) that is vanishingly unlikely.
+ Easy to add if you disagree.
 - **Token accounting.** `input_tokens`, `output_tokens`,
-  `cache_read_input_tokens` and `cache_creation_input_tokens` are recorded
-  per call and totalled in the run summary.
+ `cache_read_input_tokens` and `cache_creation_input_tokens` are recorded
+ per call and totalled in the run summary.
 
 The `StubBackend` remains for plumbing tests and is **refused in a scored run**.
