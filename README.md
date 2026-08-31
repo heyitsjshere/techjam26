@@ -13,6 +13,8 @@ scored run.
 > An agent that improved on every single iteration was terminated for not
 > improving. See [F9](reports/REPORT_SCAFFOLD.md).
 
+![An agent that improved on every iteration, stopped for insufficient progress](reports/figures/01_stopped_while_improving.png)
+
 ## Results
 
 | | GAUC | nDCG@5 | primary | delta |
@@ -47,6 +49,10 @@ Three independent lines of evidence agree the benchmark is saturated:
 Against ~0.0025 of headroom, the stopping rule uses eps = 0.002. **The threshold
 is roughly 80% of the entire prize**, which permits about one meaningful
 experiment per run. That is the central finding of this project.
+
+![The stopping rule is nearly the size of the entire prize](reports/figures/02_threshold_vs_headroom.png)
+
+![Only the structural moves clear seed noise](reports/figures/03_phase1_delta_ladder.png)
 
 ## Setup
 

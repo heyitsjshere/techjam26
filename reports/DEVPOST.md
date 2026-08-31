@@ -21,6 +21,8 @@ improving. That is not a story about a weak agent. It is a property of a
 stopping rule whose threshold is roughly 80% of the total headroom the benchmark
 actually contains.
 
+![stopped while improving](figures/01_stopped_while_improving.png)
+
 ## What it does
 
 An LLM-driven agent that reproduces the official baseline, forms its own
