@@ -6,6 +6,9 @@ notes/
 
 # --- data (downloaded separately from Zenodo, 184MB+) ---
 *.csv
+# ...but the designated submission is a required deliverable, not data.
+# The blanket *.csv rule silently excluded it; caught in the pre-publication audit.
+!reports/submission_test.csv
 *.tar.gz
 *.zip
 KuaiRand-Pure/
