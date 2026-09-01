@@ -195,7 +195,10 @@ isolate variables.
 
 ## Contributions
 
-Team leader: **Lim Junsheng**.
+Team leader: 
+**Lim Junsheng**
+Members:
+**Sim Qi Xun, Tiew Yong Chun Ethan, Ho Zhao Heng, Chen Wendi**
 
 ## Data and licence
 
