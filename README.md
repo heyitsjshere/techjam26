@@ -195,9 +195,7 @@ isolate variables.
 
 ## Contributions
 
-Sole contributor: **Lim Junsheng**. Registered as a team, executed solo.
-Development assisted by Claude Code (Claude Opus 5); the agent's own proposer
-also runs on `claude-opus-5`.
+Team leader: **Lim Junsheng**.
 
 ## Data and licence
 
